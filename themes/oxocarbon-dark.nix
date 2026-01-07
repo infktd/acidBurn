@@ -73,7 +73,8 @@
     polarity = "dark";
 
     image = pkgs.fetchurl {
-      url = "https://github.com/justchokingaround/wallpapers/blob/main/oxocarbon-evangelion.jpg";
+      url = "https://raw.githubusercontent.com/redyf/wallpapers/main/oxocarbon/J6hvBTc2EITlhIZo.jpg";
+      sha256 = "0r1b3zrljslkmr987ncdj3j12hhbs3lhk63aszzsijyabddpj4ca";
     };
   };
 }
