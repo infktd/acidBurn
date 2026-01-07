@@ -2,14 +2,25 @@
   lib,
   pkgs,
   config,
-  ...
-}: {
-  name = "Oxocarbon Dark";
-  author = "shaunsingh/IBM, Tinted Theming (https://github.com/tinted-theming)";
-  system = "base16";
-  variant = "dark";
+  ...}: {
+  options.theme = lib.mkOption {
+    type = lib.types.attrs;
+    default = {
+      rounding = 5;
+      gaps-in = 12;
+      gaps-out = 12 * 2;
+      active-opacity = 0.80;
+      inactive-opacity = 0.50;
+      blur = true;
+      border-size = 1;
+      animation-speed = "fast"; # "fast" | "medium" | "slow"
+      fetch = "neofetch"; # "nerdfetch" | "neofetch" | "pfetch" | "none"
+      textColorOnWallpaper = config.lib.stylix.colors.base00;
+    };
+    description = "Theme configuration options";
+  };
 
-  stylix = {
+  config.stylix = {
     enable = true;
 
     base16Scheme = {
@@ -52,18 +63,17 @@
         name = "Noto Color Emoji";
       };
       sizes = {
-        applications = 13;
-        desktop = 13;
-        popups = 13;
-        terminal = 13;
+        applications = 14;
+        desktop = 14;
+        popups = 14;
+        terminal = 14;
       };
     };
 
     polarity = "dark";
 
     image = pkgs.fetchurl {
-      url = "https://raw.githubusercontent.com/anotherhadi/awesome-wallpapers/refs/heads/main/app/static/wallpapers/pink-clouds.png";
-      sha256 = "sha256-IvINf62mg9rKjml4sh8hl/j7UHrQQlbm6QnZTaI+TRk=";
+      url = "https://github.com/justchokingaround/wallpapers/blob/main/oxocarbon-evangelion.jpg";
     };
   };
 }
