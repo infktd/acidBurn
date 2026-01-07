@@ -1,3 +1,0 @@
- environment.systemPackages = [
-    pkgs.vscode
-  ];

@@ -7,15 +7,15 @@
   options.theme = lib.mkOption {
     type = lib.types.attrs;
     default = {
-      rounding = 30;
+      rounding = 0;
       gaps-in = 12;
       gaps-out = 12 * 2;
-      active-opacity = 0.96;
-      inactive-opacity = 0.94;
+      active-opacity = 0.85;
+      inactive-opacity = 0.50;
       blur = true;
-      border-size = 4;
+      border-size = 0;
       animation-speed = "fast"; # "fast" | "medium" | "slow"
-      fetch = "none"; # "nerdfetch" | "neofetch" | "pfetch" | "none"
+      fetch = "neofetch"; # "nerdfetch" | "neofetch" | "pfetch" | "none"
       textColorOnWallpaper =
         config.lib.stylix.colors.base00; # Color of the text displayed on the wallpaper (Lockscreen, display manager, ...)
     };
@@ -48,7 +48,7 @@
     cursor = {
       name = "BreezeX-RosePine-Linux";
       package = pkgs.rose-pine-cursor;
-      size = 20;
+      size = 40;
     };
 
     fonts = {

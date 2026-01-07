@@ -1,0 +1,69 @@
+{
+  lib,
+  pkgs,
+  config,
+  ...
+}: {
+  name = "Oxocarbon Dark";
+  author = "shaunsingh/IBM, Tinted Theming (https://github.com/tinted-theming)";
+  system = "base16";
+  variant = "dark";
+
+  stylix = {
+    enable = true;
+
+    base16Scheme = {
+      base00 = "161616";
+      base01 = "262626";
+      base02 = "393939";
+      base03 = "525252";
+      base04 = "dde1e6";
+      base05 = "f2f4f8";
+      base06 = "ffffff";
+      base07 = "08bdba";
+      base08 = "ee5396";
+      base09 = "ff7eb6";
+      base0A = "ff6f00";
+      base0B = "42be65";
+      base0C = "3ddbd9";
+      base0D = "33b1ff";
+      base0E = "be95ff";
+      base0F = "82cfff";
+    };
+
+    cursor = {
+      name = "Oxocarbon-Dark-Cursor";
+      package = pkgs.graphite-cursors;
+      size = 40;
+    };
+
+    fonts = {
+      monospace = {
+        package = pkgs.nerd-fonts.jetbrains-mono;
+        name = "JetBrains Mono Nerd Font";
+      };
+      sansSerif = {
+        package = pkgs.source-sans-pro;
+        name = "Source Sans Pro";
+      };
+      serif = config.stylix.fonts.sansSerif;
+      emoji = {
+        package = pkgs.noto-fonts-color-emoji;
+        name = "Noto Color Emoji";
+      };
+      sizes = {
+        applications = 13;
+        desktop = 13;
+        popups = 13;
+        terminal = 13;
+      };
+    };
+
+    polarity = "dark";
+
+    image = pkgs.fetchurl {
+      url = "https://raw.githubusercontent.com/anotherhadi/awesome-wallpapers/refs/heads/main/app/static/wallpapers/pink-clouds.png";
+      sha256 = "sha256-IvINf62mg9rKjml4sh8hl/j7UHrQQlbm6QnZTaI+TRk=";
+    };
+  };
+}

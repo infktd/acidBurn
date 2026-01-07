@@ -67,7 +67,9 @@ in {
       ];
 
       # Let Hyprland auto-detect outputs (avoid hard-coded monitor names/positions)
-      monitor = [];
+      monitor = [
+        "DP-1, 2560x1440@165, 0x1440, 1"
+        "DP-2, 2560x1440@165, 0x0, 1"];
 
       env = [
         "XDG_CURRENT_DESKTOP,Hyprland"
@@ -88,7 +90,6 @@ in {
         "WLR_DRM_NO_ATOMIC,1"
         "WLR_BACKEND,vulkan"
         "WLR_RENDERER,vulkan"
-        "WLR_NO_HARDWARE_CURSORS,1"
         "SDL_VIDEODRIVER,wayland"
         "CLUTTER_BACKEND,wayland"
       ];
@@ -159,12 +160,8 @@ in {
         repeat_delay = 300;
         repeat_rate = 50;
         numlock_by_default = true;
-
-        touchpad = {
-          natural_scroll = true;
-          clickfinger_behavior = true;
-        };
       };
+      
     };
   };
 }
