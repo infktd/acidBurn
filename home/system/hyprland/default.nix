@@ -94,11 +94,7 @@ in {
         "SDL_VIDEODRIVER,wayland"
         "CLUTTER_BACKEND,wayland"
       ];
-
-      cursor = {
-        no_hardware_cursors = false;
-      };
-
+      
       general = {
         resize_on_border = true;
         gaps_in = gaps-in;

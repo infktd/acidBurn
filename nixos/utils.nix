@@ -112,6 +112,7 @@ in {
     jpegoptim
     pfetch
     btop
+    logitech-udev-rules
   ];
 
   xdg.portal = {

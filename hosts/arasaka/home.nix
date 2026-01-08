@@ -38,6 +38,7 @@
       gnome-text-editor # Basic graphic text editor
       mpv # Video player
       signal-desktop # Signal app, private messages
+      solaar # Logitech devices manager
 
 
       # Dev

@@ -47,7 +47,7 @@ in {
       open = false; # Proprietary driver for better performance
       nvidiaSettings = true; # Nvidia settings utility
       powerManagement = {
-        enable = true; # Power management
+        enable = false; # Power management
       };
       modesetting.enable = true; # Required for Wayland
       package = nvidiaDriverChannel;
