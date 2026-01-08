@@ -14,7 +14,7 @@
       blur = true;
       border-size = 1;
       animation-speed = "fast"; # "fast" | "medium" | "slow"
-      fetch = "neofetch"; # "nerdfetch" | "neofetch" | "pfetch" | "none"
+      fetch = "none"; # "nerdfetch" | "neofetch" | "pfetch" | "none"
       textColorOnWallpaper = config.lib.stylix.colors.base00;
     };
     description = "Theme configuration options";
@@ -43,9 +43,9 @@
     };
 
     cursor = {
-      name = "Oxocarbon-Dark-Cursor";
-      package = pkgs.graphite-cursors;
-      size = 40;
+      name = "BreezeX-RosePine-Linux";
+      package = pkgs.rose-pine-cursor;
+      size = 30;
     };
 
     fonts = {
@@ -73,8 +73,8 @@
     polarity = "dark";
 
     image = pkgs.fetchurl {
-      url = "https://raw.githubusercontent.com/redyf/wallpapers/main/oxocarbon/J6hvBTc2EITlhIZo.jpg";
-      sha256 = "0r1b3zrljslkmr987ncdj3j12hhbs3lhk63aszzsijyabddpj4ca";
+    url = "https://raw.githubusercontent.com/anotherhadi/awesome-wallpapers/refs/heads/main/app/static/wallpapers/tokyo-skyscraper_dark.png";
+    sha256 = "1kg2rglfhsm725y2ni634fx9a837qn23s5ba4jxdwxfjc56hgla9";
     };
   };
 }

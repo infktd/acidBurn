@@ -34,6 +34,7 @@ in {
     swappy
     imv
     wf-recorder
+    # hyprcursor removed: use GTK/wayland cursor theming instead
     wlr-randr
     brightnessctl
     gnome-themes-extra
@@ -87,6 +88,8 @@ in {
         "__GL_VRR_ALLOWED,0"
         "DISABLE_QT5_COMPAT,0"
         "DIRENV_LOG_FORMAT,"
+        # "XCURSOR_THEME, BreezeX-RosePine-Linux"
+        # "XCURSOR_SIZE, 30"
         "WLR_DRM_NO_ATOMIC,1"
         "WLR_BACKEND,vulkan"
         "WLR_RENDERER,vulkan"
@@ -155,7 +158,7 @@ in {
         kb_layout = keyboardLayout;
 
         kb_options = "caps:escape";
-        follow_mouse = 1;
+        follow_mouse = 0;
         sensitivity = 0.5;
         repeat_delay = 300;
         repeat_rate = 50;

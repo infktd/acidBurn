@@ -82,7 +82,7 @@
 
     title_fqdn="off"
     kernel_shorthand="on"
-    distro_shorthand="off"
+    distro_shorthand="on"
     os_arch="off"
     uptime_shorthand="on"
     memory_percent="off"
@@ -100,8 +100,8 @@
     gpu_type="all"
     refresh_rate="off"
     gtk_shorthand="off"
-    gtk2="on"
-    gtk3="on"
+    gtk2="off"
+    gtk3="off"
     de_version="on"
     disk_show=('/storage/emulated' '/' '/server')
     disk_subtitle="none"
