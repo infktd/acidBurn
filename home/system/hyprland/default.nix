@@ -34,7 +34,6 @@ in {
     swappy
     imv
     wf-recorder
-    # hyprcursor removed: use GTK/wayland cursor theming instead
     wlr-randr
     brightnessctl
     gnome-themes-extra
@@ -65,6 +64,7 @@ in {
       };
       exec-once = [
         "dbus-update-activation-environment --systemd --all &"
+        "systemctl --user enable --now hyprpaper.service"
       ];
 
       # Let Hyprland auto-detect outputs (avoid hard-coded monitor names/positions)
@@ -88,8 +88,6 @@ in {
         "__GL_VRR_ALLOWED,0"
         "DISABLE_QT5_COMPAT,0"
         "DIRENV_LOG_FORMAT,"
-        # "XCURSOR_THEME, BreezeX-RosePine-Linux"
-        # "XCURSOR_SIZE, 30"
         "WLR_DRM_NO_ATOMIC,1"
         "WLR_BACKEND,vulkan"
         "WLR_RENDERER,vulkan"
