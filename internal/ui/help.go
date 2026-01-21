@@ -117,8 +117,9 @@ func (h *HelpPanel) View() string {
 	rightCol += "  " + kb("↑/k") + "     Up\n"
 	rightCol += "  " + kb("↓/j") + "     Down\n"
 	rightCol += "  " + kb("Tab") + "     Switch pane\n"
+	rightCol += "  " + k("p") + "       Toggle packages/services\n"
 	rightCol += "  " + kb("Enter") + "   Select/Confirm\n"
-	rightCol += "  " + kb("Esc") + "     Back/Cancel\n\n\n"
+	rightCol += "  " + kb("Esc") + "     Back/Cancel\n\n"
 
 	// SIDEBAR
 	leftCol += h.styles.Title.Render("SIDEBAR") + "\n"
