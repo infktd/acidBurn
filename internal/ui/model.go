@@ -91,6 +91,7 @@ type Model struct {
 	showHelp     bool
 	showSettings bool
 	showSplash   bool
+	showPackages bool // When true, show packages pane instead of services (narrow terminals)
 
 	// Search state (for logs)
 	searchMode         bool
@@ -1504,6 +1505,12 @@ const (
 // shouldShowBothPanes determines if there's enough space to show both Services and Packages panes.
 func (m *Model) shouldShowBothPanes() bool {
 	return m.width >= minWidthForBothPanes
+}
+
+// togglePackagesView switches between Services and Packages pane (for narrow terminals).
+func (m *Model) togglePackagesView() tea.Cmd {
+	m.showPackages = !m.showPackages
+	return nil
 }
 
 // updateDisplayedProjects rebuilds the sidebar display order (active first, then idle, alphabetical within each).
