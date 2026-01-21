@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -571,5 +573,76 @@ func TestView_NarrowTerminal_ShowsIndicator(t *testing.T) {
 	view = m.View()
 	if !strings.Contains(view, "[p:services]") {
 		t.Error("narrow terminal showing packages should contain '[p:services]' indicator")
+	}
+}
+
+func TestPackagesPaneIntegration(t *testing.T) {
+	// Create test project directory with packages
+	tmpDir := t.TempDir()
+	projectPath := filepath.Join(tmpDir, "testproject")
+	binDir := filepath.Join(projectPath, ".devenv", "profile", "bin")
+
+	err := os.MkdirAll(binDir, 0755)
+	if err != nil {
+		t.Fatalf("failed to create test directory: %v", err)
+	}
+
+	// Create test binaries
+	testBins := map[string]string{
+		"go":      "#!/bin/sh\necho go1.21",
+		"python3": "#!/bin/sh\necho python3.11",
+		"node":    "#!/bin/sh\necho node20",
+	}
+
+	for name, content := range testBins {
+		binPath := filepath.Join(binDir, name)
+		err := os.WriteFile(binPath, []byte(content), 0755)
+		if err != nil {
+			t.Fatalf("failed to create binary %s: %v", name, err)
+		}
+	}
+
+	// Create model with test project
+	cfg := config.Default()
+	reg := &registry.Registry{
+		Projects: []*registry.Project{
+			{Path: projectPath, Name: "testproject"},
+		},
+	}
+	m := New(cfg, reg)
+	m.width = 150 // Wide terminal
+	m.height = 50
+	m.showSplash = false
+	m.selectedProject = 0
+
+	// Trigger project switch (should scan packages)
+	m.switchToCurrentProject()
+
+	// Verify packages were scanned
+	view := m.View()
+	if !strings.Contains(view, "PACKAGES") {
+		t.Error("view should contain PACKAGES pane")
+	}
+
+	// Switch to narrow terminal
+	m.width = 100
+	msg := tea.WindowSizeMsg{Width: 100, Height: 50}
+	newModel, _ := m.Update(msg)
+	m = newModel.(*Model)
+
+	// Should show services by default
+	view = m.View()
+	if !strings.Contains(view, "[p:packages]") {
+		t.Error("narrow terminal should show packages indicator")
+	}
+
+	// Toggle to packages
+	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}}
+	newModel, _ = m.Update(keyMsg)
+	m = newModel.(*Model)
+
+	view = m.View()
+	if !strings.Contains(view, "[p:services]") {
+		t.Error("narrow terminal showing packages should show services indicator")
 	}
 }
