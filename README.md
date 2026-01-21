@@ -1,5 +1,10 @@
 # acidBurn
 
+[![Made with Nix](https://img.shields.io/badge/Made_with-Nix-5277C3?logo=nixos&logoColor=white)](https://nixos.org)
+[![Made with devenv](https://img.shields.io/badge/Made_with-devenv-00D9FF?logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTUwIDEwTDkwIDUwTDUwIDkwTDEwIDUwTDUwIDEwWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=&logoColor=white)](https://devenv.sh)
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![GitHub Stars](https://img.shields.io/github/stars/infktd/acidburn?style=social)](https://github.com/infktd/acidburn)
+
 A terminal user interface (TUI) for managing devenv.sh environments. Think of it as "Docker Desktop for Nix" - a unified control plane for all your devenv projects.
 
 ## Overview
