@@ -1497,6 +1497,15 @@ func (m *Model) currentProject() *registry.Project {
 	return m.displayedProjects[m.selectedProject]
 }
 
+const (
+	minWidthForBothPanes = 140
+)
+
+// shouldShowBothPanes determines if there's enough space to show both Services and Packages panes.
+func (m *Model) shouldShowBothPanes() bool {
+	return m.width >= minWidthForBothPanes
+}
+
 // updateDisplayedProjects rebuilds the sidebar display order (active first, then idle, alphabetical within each).
 // It also caches the detected states to avoid inconsistent state during rendering.
 func (m *Model) updateDisplayedProjects() {
