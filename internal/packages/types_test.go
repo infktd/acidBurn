@@ -248,3 +248,36 @@ func TestParseNixStorePath(t *testing.T) {
 		})
 	}
 }
+
+func TestCategorizePackage(t *testing.T) {
+	tests := []struct {
+		name         string
+		packageName  string
+		expectedType string
+	}{
+		{"go", "go", "Go"},
+		{"gofmt", "gofmt", "Go"},
+		{"gopls", "gopls", "Go"},
+		{"python3", "python3", "Python"},
+		{"python", "python", "Python"},
+		{"pip", "pip", "Python"},
+		{"pytest", "pytest", "Python"},
+		{"node", "node", "Node.js"},
+		{"npm", "npm", "Node.js"},
+		{"nodejs", "nodejs", "Node.js"},
+		{"cargo", "cargo", "Rust"},
+		{"rustc", "rustc", "Rust"},
+		{"gcc", "gcc", "C/C++"},
+		{"clang", "clang", "C/C++"},
+		{"unknown", "foobar", "Other"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typ := categorizePackage(tt.packageName)
+			if typ != tt.expectedType {
+				t.Errorf("expected type %q for %q, got %q", tt.expectedType, tt.packageName, typ)
+			}
+		})
+	}
+}
