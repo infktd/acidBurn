@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/infktd/devdash/internal/compose"
 	"github.com/infktd/devdash/internal/config"
 	"github.com/infktd/devdash/internal/registry"
 )
@@ -211,5 +212,207 @@ func TestModelShowsAlertHistory(t *testing.T) {
 	view := m.View()
 	if view == "" {
 		t.Error("View() returned empty string for alert history")
+	}
+}
+
+// TestMouseFocusFollowing verifies mouse motion changes focus between panes
+func TestMouseFocusFollowing(t *testing.T) {
+	cfg := config.Default()
+	cfg.UI.SidebarWidth = 30
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 100
+	m.height = 40
+	m.showSplash = false
+
+	// Mouse in sidebar (x < 30)
+	msg := tea.MouseMsg{
+		Type: tea.MouseMotion,
+		X:    15,
+		Y:    10,
+	}
+	newModel, _ := m.Update(msg)
+	model := newModel.(*Model)
+	if model.focused != PaneSidebar {
+		t.Errorf("Expected focus on sidebar, got %v", model.focused)
+	}
+
+	// Mouse in services pane (x >= 30, y < servicesHeight)
+	msg = tea.MouseMsg{
+		Type: tea.MouseMotion,
+		X:    50,
+		Y:    5,
+	}
+	newModel, _ = model.Update(msg)
+	model = newModel.(*Model)
+	if model.focused != PaneServices {
+		t.Errorf("Expected focus on services, got %v", model.focused)
+	}
+
+	// Mouse in logs pane (x >= 30, y >= servicesHeight)
+	msg = tea.MouseMsg{
+		Type: tea.MouseMotion,
+		X:    50,
+		Y:    30,
+	}
+	newModel, _ = model.Update(msg)
+	model = newModel.(*Model)
+	if model.focused != PaneLogs {
+		t.Errorf("Expected focus on logs, got %v", model.focused)
+	}
+}
+
+// TestMouseFocusIgnoresWhenModalsOpen verifies mouse doesn't change focus with modals open
+func TestMouseFocusIgnoresWhenModalsOpen(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 100
+	m.height = 40
+	m.focused = PaneSidebar
+
+	// Show help modal
+	m.showHelp = true
+
+	msg := tea.MouseMsg{
+		Type: tea.MouseMotion,
+		X:    50,
+		Y:    10,
+	}
+	newModel, _ := m.Update(msg)
+	model := newModel.(*Model)
+
+	// Focus should remain on sidebar (mouse ignored)
+	if model.focused != PaneSidebar {
+		t.Errorf("Expected focus to remain on sidebar with modal open, got %v", model.focused)
+	}
+}
+
+// TestMouseWheelScrolling verifies mouse wheel scrolls logs
+func TestMouseWheelScrolling(t *testing.T) {
+	cfg := config.Default()
+	cfg.UI.SidebarWidth = 30
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 100
+	m.height = 60 // Taller for better pane separation
+	m.showSplash = false
+
+	// Add many log entries so scrolling is possible
+	for i := 0; i < 100; i++ {
+		m.logView.AddEntry(LogEntry{
+			Message: "test log entry",
+			Level:   LevelInfo,
+		})
+	}
+
+	// Set logs pane size
+	m.logView.SetSize(70, 20)
+
+	initialOffset := m.logView.offset
+
+	// Mouse wheel up in logs pane (well into logs area)
+	// Services height is ~(60-4)/3 = 18, so y=40 is definitely in logs
+	msg := tea.MouseMsg{
+		Type: tea.MouseWheelUp,
+		X:    50,
+		Y:    40,
+	}
+	newModel, _ := m.Update(msg)
+	model := newModel.(*Model)
+
+	// Offset should have increased (scrolled up)
+	if model.logView.offset <= initialOffset {
+		t.Errorf("Expected log offset to increase after mouse wheel up, was %d, now %d", initialOffset, model.logView.offset)
+	}
+}
+
+// TestAutoUpdateServicesOnProjectChange verifies services update when navigating projects
+func TestAutoUpdateServicesOnProjectChange(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{
+		Projects: []*registry.Project{
+			{Path: "/a", Name: "ProjectA"},
+			{Path: "/b", Name: "ProjectB"},
+		},
+	}
+	m := New(cfg, reg)
+	m.showSplash = false
+	m.selectedProject = 0
+
+	// Set some initial service state
+	m.services = []compose.ProcessStatus{{Name: "oldservice"}}
+
+	// Move down to next project
+	cmd := m.moveDown()
+
+	// Should return a command to poll services
+	if cmd == nil {
+		t.Error("moveDown should return poll command when project changes")
+	}
+
+	// Services should be cleared for the new project
+	if len(m.services) != 0 {
+		t.Errorf("Expected services to be cleared, got %d services", len(m.services))
+	}
+
+	// Selected project should have changed
+	if m.selectedProject != 1 {
+		t.Errorf("Expected selectedProject 1, got %d", m.selectedProject)
+	}
+}
+
+// TestNoUpdateServicesWhenProjectUnchanged verifies no update if project doesn't change
+func TestNoUpdateServicesWhenProjectUnchanged(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{
+		Projects: []*registry.Project{
+			{Path: "/a", Name: "ProjectA"},
+		},
+	}
+	m := New(cfg, reg)
+	m.showSplash = false
+	m.selectedProject = 0
+
+	// Try to move down (but we're at the bottom)
+	cmd := m.moveDown()
+
+	// Should not return a command since project didn't change
+	if cmd != nil {
+		t.Error("moveDown should not return command when project doesn't change")
+	}
+}
+
+// TestSwitchToCurrentProjectResetsState verifies state is cleared on project switch
+func TestSwitchToCurrentProjectResetsState(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+
+	// Set up some state
+	m.services = []compose.ProcessStatus{{Name: "test"}}
+	m.selectedService = 5
+	m.lastLogMsg = map[string]string{"svc": "msg"}
+	m.serviceStates = map[string]string{"svc": "running"}
+	m.cpuHistory = map[string][]float64{"svc": {1.0, 2.0}}
+
+	// Switch project
+	m.switchToCurrentProject()
+
+	// All state should be reset
+	if len(m.services) != 0 {
+		t.Error("services should be cleared")
+	}
+	if m.selectedService != 0 {
+		t.Error("selectedService should be reset to 0")
+	}
+	if len(m.lastLogMsg) != 0 {
+		t.Error("lastLogMsg should be cleared")
+	}
+	if len(m.serviceStates) != 0 {
+		t.Error("serviceStates should be cleared")
+	}
+	if len(m.cpuHistory) != 0 {
+		t.Error("cpuHistory should be cleared")
 	}
 }
