@@ -287,3 +287,40 @@ func TestScanMissingDirectory(t *testing.T) {
 		t.Errorf("expected 0 packages for missing directory, got %d", len(packages))
 	}
 }
+
+func TestGroupByPackage(t *testing.T) {
+	binaries := []binaryInfo{
+		{name: "go", version: "1.21.5", hash: "abc123", path: "/path/to/go"},
+		{name: "gofmt", version: "1.21.5", hash: "abc123", path: "/path/to/gofmt"},
+		{name: "gopls", version: "0.14.0", hash: "xyz789", path: "/path/to/gopls"},
+		{name: "python3", version: "3.11.7", hash: "def456", path: "/path/to/python3"},
+	}
+
+	packages := groupByPackage(binaries)
+
+	// Should have 3 packages (go+gofmt grouped, gopls separate, python separate)
+	if len(packages) != 3 {
+		t.Errorf("expected 3 packages, got %d", len(packages))
+	}
+
+	// Find the Go package
+	var goPackage *Package
+	for i := range packages {
+		if packages[i].Name == "go" {
+			goPackage = &packages[i]
+			break
+		}
+	}
+
+	if goPackage == nil {
+		t.Fatal("expected to find 'go' package")
+	}
+
+	if goPackage.Version != "1.21.5" {
+		t.Errorf("expected go version 1.21.5, got %q", goPackage.Version)
+	}
+
+	if goPackage.Type != "Go" {
+		t.Errorf("expected go type 'Go', got %q", goPackage.Type)
+	}
+}
