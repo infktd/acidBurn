@@ -324,7 +324,7 @@ func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Calculate pane boundaries
 	sidebarWidth := m.config.UI.SidebarWidth
-	servicesHeight := (m.height - 4) / 3 // Approximate services pane height
+	bodyHeight := m.height - 4 // header + footer
 
 	// Determine which pane the mouse is over
 	x := msg.X
@@ -335,10 +335,29 @@ func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if x < sidebarWidth {
 		// Mouse is in sidebar (projects)
 		newFocus = PaneSidebar
-	} else {
-		// Mouse is in main area (services or logs)
+	} else if m.shouldShowBothPanes() {
+		// Wide terminal: Services, Packages, Logs stacked vertically
+		servicesHeight := bodyHeight / 4
+		packagesHeight := bodyHeight / 4
+
 		if y < servicesHeight+2 { // +2 for header
 			newFocus = PaneServices
+		} else if y < servicesHeight+packagesHeight+4 { // +4 for header and borders
+			newFocus = PanePackages
+		} else {
+			newFocus = PaneLogs
+		}
+	} else {
+		// Narrow terminal: either Services or Packages, plus Logs
+		mainPaneHeight := bodyHeight / 3
+
+		if y < mainPaneHeight+2 { // +2 for header
+			// In main pane area - could be services or packages
+			if m.showPackages {
+				newFocus = PanePackages
+			} else {
+				newFocus = PaneServices
+			}
 		} else {
 			newFocus = PaneLogs
 		}
