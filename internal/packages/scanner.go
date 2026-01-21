@@ -1,6 +1,8 @@
 package packages
 
 import (
+	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -143,4 +145,76 @@ func categorizePackage(name string) string {
 	}
 
 	return "Other"
+}
+
+// binaryInfo holds parsed information about a binary.
+type binaryInfo struct {
+	name    string
+	version string
+	hash    string
+	path    string
+}
+
+// Scan discovers packages in a devenv project.
+// Returns list of packages found, or empty list if directory doesn't exist.
+func Scan(projectPath string) ([]Package, error) {
+	binDir := filepath.Join(projectPath, ".devenv", "profile", "bin")
+
+	// Check if bin directory exists
+	if _, err := os.Stat(binDir); os.IsNotExist(err) {
+		return []Package{}, nil
+	}
+
+	var binaries []binaryInfo
+
+	// Read all files in bin directory
+	err := filepath.WalkDir(binDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // Skip errors
+		}
+
+		// Skip directories and the bin directory itself
+		if d.IsDir() {
+			return nil
+		}
+
+		// Resolve symlink to find Nix store path
+		target, err := os.Readlink(path)
+		if err != nil {
+			// Not a symlink, use the file path itself
+			target = path
+		}
+
+		// Parse Nix store path
+		name, version, hash := parseNixStorePath(target)
+		if name == "" {
+			// Couldn't parse, skip
+			return nil
+		}
+
+		binaries = append(binaries, binaryInfo{
+			name:    name,
+			version: version,
+			hash:    hash,
+			path:    path,
+		})
+
+		return nil
+	})
+
+	if err != nil {
+		return []Package{}, err
+	}
+
+	// Group binaries by package
+	packages := groupByPackage(binaries)
+
+	return packages, nil
+}
+
+// groupByPackage groups binaries from the same Nix package.
+// Binaries with the same hash+name+version belong to the same package.
+func groupByPackage(binaries []binaryInfo) []Package {
+	// Stub for now - will be implemented in Task 5
+	return []Package{}
 }

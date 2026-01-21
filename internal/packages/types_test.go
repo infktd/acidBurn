@@ -1,6 +1,8 @@
 package packages
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -240,5 +242,48 @@ func TestCategorizePackage(t *testing.T) {
 				t.Errorf("categorizePackage(%q) = %q, want %q", tt.packageName, typ, tt.expectedType)
 			}
 		})
+	}
+}
+
+func TestScan(t *testing.T) {
+	// Create temporary test directory structure
+	tmpDir := t.TempDir()
+	projectDir := filepath.Join(tmpDir, "testproject")
+	binDir := filepath.Join(projectDir, ".devenv", "profile", "bin")
+
+	err := os.MkdirAll(binDir, 0755)
+	if err != nil {
+		t.Fatalf("failed to create test directory: %v", err)
+	}
+
+	// Create test binary files (regular files for testing, not actual symlinks)
+	testBinaries := []string{"go", "python3", "node"}
+	for _, bin := range testBinaries {
+		binPath := filepath.Join(binDir, bin)
+		err := os.WriteFile(binPath, []byte("#!/bin/sh\necho test"), 0755)
+		if err != nil {
+			t.Fatalf("failed to create test binary %s: %v", bin, err)
+		}
+	}
+
+	// Run scan
+	packages, err := Scan(projectDir)
+	if err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	// Should not error - package count validation will be in Task 5 when grouping is implemented
+	_ = packages
+}
+
+func TestScanMissingDirectory(t *testing.T) {
+	packages, err := Scan("/nonexistent/path")
+
+	// Should not error, just return empty list
+	if err != nil {
+		t.Errorf("expected no error for missing directory, got %v", err)
+	}
+	if len(packages) != 0 {
+		t.Errorf("expected 0 packages for missing directory, got %d", len(packages))
 	}
 }
