@@ -103,6 +103,7 @@ type Model struct {
 
 	// Components
 	logView       *LogView
+	packagesView  *PackagesView
 	toast         *ToastManager
 	alerts        *AlertHistory
 	alertsPanel   *AlertsPanel
@@ -267,6 +268,7 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 
 		// Initialize components
 		logView:       NewLogView(styles, 80, 20),
+		packagesView:  NewPackagesView(styles),
 		toast:         NewToastManager(styles, 60),
 		alerts:        alertHistory,
 		alertsPanel:   NewAlertsPanel(styles, alertHistory, 80, 24),

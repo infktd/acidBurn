@@ -416,3 +416,13 @@ func TestSwitchToCurrentProjectResetsState(t *testing.T) {
 		t.Error("cpuHistory should be cleared")
 	}
 }
+
+func TestModelPackagesViewInitialized(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+
+	if m.packagesView == nil {
+		t.Error("packagesView should be initialized")
+	}
+}
