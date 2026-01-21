@@ -131,3 +131,57 @@ func TestPackageInfoStructure(t *testing.T) {
 		})
 	}
 }
+
+func TestParseNixStorePath(t *testing.T) {
+	tests := []struct {
+		name            string
+		path            string
+		expectedPkg     string
+		expectedVersion string
+		expectedHash    string
+	}{
+		{
+			name:            "standard format",
+			path:            "/nix/store/abc123-go-1.21.5/bin/go",
+			expectedPkg:     "go",
+			expectedVersion: "1.21.5",
+			expectedHash:    "abc123",
+		},
+		{
+			name:            "python with dots",
+			path:            "/nix/store/xyz789-python3-3.11.7/bin/python3",
+			expectedPkg:     "python3",
+			expectedVersion: "3.11.7",
+			expectedHash:    "xyz789",
+		},
+		{
+			name:            "package with complex name",
+			path:            "/nix/store/def456-gopls-0.14.0-unstable/bin/gopls",
+			expectedPkg:     "gopls",
+			expectedVersion: "0.14.0-unstable",
+			expectedHash:    "def456",
+		},
+		{
+			name:            "no version",
+			path:            "/nix/store/ghi789-bash/bin/bash",
+			expectedPkg:     "bash",
+			expectedVersion: "",
+			expectedHash:    "ghi789",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pkg, version, hash := parseNixStorePath(tt.path)
+			if pkg != tt.expectedPkg {
+				t.Errorf("expected package %q, got %q", tt.expectedPkg, pkg)
+			}
+			if version != tt.expectedVersion {
+				t.Errorf("expected version %q, got %q", tt.expectedVersion, version)
+			}
+			if hash != tt.expectedHash {
+				t.Errorf("expected hash %q, got %q", tt.expectedHash, hash)
+			}
+		})
+	}
+}
