@@ -12,7 +12,7 @@ type Package struct {
 
 // PackageInfo holds package information for a project.
 type PackageInfo struct {
-	ProjectPath string
-	Packages    []Package
-	LastScanned time.Time
+	ProjectPath string    // Absolute path to the project
+	Packages    []Package // List of detected packages
+	LastScanned time.Time // When the project was last scanned
 }
