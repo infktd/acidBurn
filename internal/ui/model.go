@@ -1161,6 +1161,9 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.alertsPanel.Show()
 		}
 		return m, nil
+	case msg.String() == "p":
+		// Toggle between packages and services view
+		return m, m.togglePackagesView()
 	case key.Matches(msg, m.keys.Back):
 		// Don't handle Esc globally if sidebar is filtering or logs has active search
 		if m.focused == PaneSidebar && m.projectFilterMode {
