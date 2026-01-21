@@ -4,6 +4,27 @@ All notable changes to acidBurn will be documented in this file.
 
 This project uses [0ver](https://0ver.org/) versioning.
 
+## [Unreleased]
+
+### Added
+- Real-time log flow indicators in services table
+  - Animated braille spinner (⣾⣽⣻⢿⡿⣟⣯⣷) shows when service is actively logging
+  - Appears in new ACTIVITY column between STATUS and SERVICE
+  - Indicator displays when logs received within last 2 seconds
+  - Smooth 100ms animation cycle for visual feedback
+
+### Changed
+- Services table column order reorganized: STATUS | ACTIVITY | SERVICE | PID | CPU | MEM | EXIT
+- Log activity tracked per service with timestamp precision
+- Activity indicators animate independently using dedicated ticker (100ms intervals)
+
+### Technical
+- Added `logActivity` map tracking last log timestamp per service
+- Added `activityFrame` counter for spinner animation state
+- Implemented `activityTickMsg` and `activityTickCmd()` for animation updates
+- Created `getActivityIndicator()` helper with 8-frame braille spinner
+- Services table updates every animation frame to display current spinner state
+
 ## [0.1.2] - 2026-01-21
 
 ### Added

@@ -131,10 +131,15 @@ type Model struct {
 
 	// Track last seen log message per service to fetch only new logs
 	lastLogMsg map[string]string
+
+	// Track log activity timestamps per service for flow indicators
+	logActivity   map[string]time.Time
+	activityFrame int // Animation frame counter for log flow spinner
 }
 
 // Messages for async operations
 type tickMsg time.Time
+type activityTickMsg time.Time
 type pollServicesMsg struct{}
 type servicesUpdatedMsg struct {
 	services []compose.ProcessStatus
@@ -188,8 +193,9 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 
 	// Initialize services table
 	columns := []table.Column{
-		{Title: "SERVICE", Width: 20},
 		{Title: "STATUS", Width: 10},
+		{Title: "ACTIVITY", Width: 8},
+		{Title: "SERVICE", Width: 20},
 		{Title: "PID", Width: 8},
 		{Title: "CPU", Width: 8},
 		{Title: "MEM", Width: 10},
@@ -246,6 +252,7 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 		projectsList:  projectsList,
 		clients:       make(map[string]*compose.Client),
 		lastLogMsg:    make(map[string]string),
+		logActivity:   make(map[string]time.Time),
 		projectStates: make(map[string]registry.ProjectState),
 	}
 
@@ -267,6 +274,7 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 func (m *Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.tickCmd(),
+		m.activityTickCmd(),
 		m.pollServicesCmd(),
 		m.splashTickCmd(),
 		m.spinner.Tick,
@@ -279,6 +287,12 @@ type splashTickMsg struct{}
 func (m *Model) tickCmd() tea.Cmd {
 	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)
+	})
+}
+
+func (m *Model) activityTickCmd() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return activityTickMsg(t)
 	})
 }
 
@@ -507,6 +521,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.tickCmd())
 		cmds = append(cmds, m.pollServicesCmd())
 
+	case activityTickMsg:
+		// Increment animation frame and update table if we have services
+		if len(m.services) > 0 {
+			m.activityFrame++
+			m.updateServicesTable()
+		}
+		cmds = append(cmds, m.activityTickCmd())
+
 	case pollServicesMsg:
 		// Poll the currently selected project
 		if p := m.currentProject(); p != nil {
@@ -585,6 +607,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				// Add new logs (logs come oldest-first from API)
+				newLogCount := 0
 				for i := startIdx; i < len(logs); i++ {
 					// Try to parse timestamp from log line, fall back to now
 					ts, ok := ParseLogTimestamp(logs[i])
@@ -597,10 +620,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						Level:     DetectLogLevel(logs[i]),
 						Message:   logs[i],
 					})
+					newLogCount++
 				}
 
 				// Track last message seen
 				m.lastLogMsg[service] = logs[len(logs)-1]
+
+				// Record log activity timestamp if new logs were added
+				if newLogCount > 0 {
+					m.logActivity[service] = time.Now()
+				}
 			}
 		}
 
@@ -955,9 +984,10 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focused = PaneServices
 		m.selectedService = 0
 		m.services = nil // Clear services, will be repopulated
-		m.lastLogMsg = make(map[string]string) // Reset log tracking for new project
-		m.logView.SetService("")              // Clear service filter
-		m.logView.buffer.Clear()              // Clear old logs
+		m.lastLogMsg = make(map[string]string)    // Reset log tracking for new project
+		m.logActivity = make(map[string]time.Time) // Reset log activity tracking
+		m.logView.SetService("")                   // Clear service filter
+		m.logView.buffer.Clear()                   // Clear old logs
 		return m, m.pollServicesCmd()
 	case key.Matches(msg, m.keys.Start):
 		// s - start project
@@ -1759,9 +1789,33 @@ func (m *Model) updateServicesTable() {
 			exit = fmt.Sprintf("%d", svc.ExitCode)
 		}
 
-		rows[i] = table.Row{svc.Name, status, pid, cpu, mem, exit}
+		// Determine activity indicator (animated spinner if logs received recently)
+		activity := m.getActivityIndicator(svc.Name)
+
+		// New column order: Status, Activity, Service, PID, CPU, Memory, Exit
+		rows[i] = table.Row{status, activity, svc.Name, pid, cpu, mem, exit}
 	}
 	m.servicesTable.SetRows(rows)
+}
+
+// getActivityIndicator returns the activity indicator for a service.
+// Shows animated braille spinner if logs received within last 2 seconds, otherwise empty.
+func (m *Model) getActivityIndicator(serviceName string) string {
+	// Braille spinner frames (8 frames for smooth animation)
+	frames := []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
+
+	lastActivity, exists := m.logActivity[serviceName]
+	if !exists {
+		return " " // No activity yet
+	}
+
+	// Show spinner if activity within last 2 seconds
+	if time.Since(lastActivity) < 2*time.Second {
+		frameIndex := m.activityFrame % len(frames)
+		return frames[frameIndex]
+	}
+
+	return " " // Activity too old, show nothing
 }
 
 // renderSectionTitle renders a section title in code comment style with separator line.
