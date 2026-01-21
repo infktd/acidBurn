@@ -135,6 +135,11 @@ type Model struct {
 	// Track log activity timestamps per service for flow indicators
 	logActivity   map[string]time.Time
 	activityFrame int // Animation frame counter for log flow spinner
+
+	// Track service states for detecting transitions
+	serviceStates       map[string]string    // Last known state per service
+	stateChangeTime     map[string]time.Time // When state last changed
+	stateFlashIntensity map[string]float64   // Flash intensity (1.0 = bright, 0.0 = normal)
 }
 
 // Messages for async operations
@@ -247,13 +252,16 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 		confirm:       NewConfirmDialog(styles),
 		health:        health.NewMonitor(2 * time.Second),
 		notifier:      notify.NewNotifier(cfg.Notifications.SystemEnabled),
-		spinner:       s,
-		servicesTable: t,
-		projectsList:  projectsList,
-		clients:       make(map[string]*compose.Client),
-		lastLogMsg:    make(map[string]string),
-		logActivity:   make(map[string]time.Time),
-		projectStates: make(map[string]registry.ProjectState),
+		spinner:             s,
+		servicesTable:       t,
+		projectsList:        projectsList,
+		clients:             make(map[string]*compose.Client),
+		lastLogMsg:          make(map[string]string),
+		logActivity:         make(map[string]time.Time),
+		projectStates:       make(map[string]registry.ProjectState),
+		serviceStates:       make(map[string]string),
+		stateChangeTime:     make(map[string]time.Time),
+		stateFlashIntensity: make(map[string]float64),
 	}
 
 	// Show splash on startup
@@ -525,6 +533,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Increment animation frame and update table if we have services
 		if len(m.services) > 0 {
 			m.activityFrame++
+
+			// Update flash intensity decay for state transitions
+			// Flash decays over ~1.5 seconds with exponential falloff
+			for serviceName, changeTime := range m.stateChangeTime {
+				elapsed := time.Since(changeTime).Seconds()
+				if elapsed >= 1.5 {
+					// Flash complete, remove from tracking
+					delete(m.stateFlashIntensity, serviceName)
+					delete(m.stateChangeTime, serviceName)
+				} else {
+					// Exponential decay: intensity goes from 1.0 to 0.0 over 1.5 seconds
+					// Using e^(-3*t) for smooth fade
+					m.stateFlashIntensity[serviceName] = 1.0 * (1.0 - elapsed/1.5)
+				}
+			}
+
 			m.updateServicesTable()
 		}
 		cmds = append(cmds, m.activityTickCmd())
@@ -569,6 +593,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return healthEventMsg(*event)
 					})
 				}
+
+				// Detect state transitions for flash animation
+				currentState := "Stopped"
+				if svc.IsRunning {
+					currentState = "Running"
+				}
+				lastState, exists := m.serviceStates[svc.Name]
+				if exists && lastState != currentState {
+					// State changed! Record timestamp and start flash animation
+					m.stateChangeTime[svc.Name] = time.Now()
+					m.stateFlashIntensity[svc.Name] = 1.0 // Start at maximum brightness
+				}
+				m.serviceStates[svc.Name] = currentState
 			}
 
 			// Clamp selected service
@@ -984,10 +1021,13 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focused = PaneServices
 		m.selectedService = 0
 		m.services = nil // Clear services, will be repopulated
-		m.lastLogMsg = make(map[string]string)    // Reset log tracking for new project
-		m.logActivity = make(map[string]time.Time) // Reset log activity tracking
-		m.logView.SetService("")                   // Clear service filter
-		m.logView.buffer.Clear()                   // Clear old logs
+		m.lastLogMsg = make(map[string]string)          // Reset log tracking for new project
+		m.logActivity = make(map[string]time.Time)      // Reset log activity tracking
+		m.serviceStates = make(map[string]string)       // Reset state tracking
+		m.stateChangeTime = make(map[string]time.Time)  // Reset state change times
+		m.stateFlashIntensity = make(map[string]float64) // Reset flash intensity
+		m.logView.SetService("")                         // Clear service filter
+		m.logView.buffer.Clear()                         // Clear old logs
 		return m, m.pollServicesCmd()
 	case key.Matches(msg, m.keys.Start):
 		// s - start project
@@ -1798,10 +1838,39 @@ func (m *Model) updateServicesTable() {
 		// Determine activity indicator (animated spinner if logs received recently)
 		activity := m.getActivityIndicator(svc.Name)
 
+		// Apply flash effect to status if state recently changed
+		styledStatus := m.applyFlashEffect(status, svc.Name, svc.IsRunning)
+
 		// New column order: Status, Activity, Service, PID, CPU, Memory, Exit
-		rows[i] = table.Row{status, activity, svc.Name, pid, cpu, mem, exit}
+		rows[i] = table.Row{styledStatus, activity, svc.Name, pid, cpu, mem, exit}
 	}
 	m.servicesTable.SetRows(rows)
+}
+
+// applyFlashEffect applies a pulse/flash animation to status text after state changes.
+// Returns the status text with styling applied based on current flash intensity.
+func (m *Model) applyFlashEffect(status string, serviceName string, isRunning bool) string {
+	intensity, hasFlash := m.stateFlashIntensity[serviceName]
+	if !hasFlash || intensity <= 0 {
+		// No flash, return plain status
+		return status
+	}
+
+	// Choose color based on service state
+	var baseColor lipgloss.Color
+	if isRunning {
+		baseColor = m.styles.theme.Success // Green for running
+	} else {
+		baseColor = m.styles.theme.Warning // Yellow/orange for stopped
+	}
+
+	// Apply flash styling: bold and use primary color mixed with base color
+	// As intensity decreases, color transitions from bright primary to normal base color
+	flashStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(baseColor)
+
+	return flashStyle.Render(status)
 }
 
 // getActivityIndicator returns the activity indicator for a service.

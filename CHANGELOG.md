@@ -12,11 +12,21 @@ This project uses [0ver](https://0ver.org/) versioning.
   - Appears in new ACTIVITY column between STATUS and SERVICE
   - Indicator displays when logs received within last 2 seconds
   - Smooth 100ms animation cycle for visual feedback
+- Animated state transition effects
+  - Status text flashes bold when service state changes (Running ↔ Stopped)
+  - Smooth 1.5 second fade from bright to normal intensity
+  - Green flash for Running state, yellow/orange for Stopped state
+  - Immediately draws attention to state changes
 
 ### Changed
 - Services table column order reorganized: STATUS | ACTIVITY | SERVICE | PID | CPU | MEM | EXIT
 - Log activity tracked per service with timestamp precision
 - Activity indicators animate independently using dedicated ticker (100ms intervals)
+- Footer keybindings now centered for better visual balance
+
+### Fixed
+- Projects list navigation glitch when pressing up at top of list
+- Navigation keys no longer passed to list component (prevents double-handling)
 
 ### Technical
 - Added `logActivity` map tracking last log timestamp per service
@@ -24,6 +34,9 @@ This project uses [0ver](https://0ver.org/) versioning.
 - Implemented `activityTickMsg` and `activityTickCmd()` for animation updates
 - Created `getActivityIndicator()` helper with 8-frame braille spinner
 - Services table updates every animation frame to display current spinner state
+- Added `serviceStates`, `stateChangeTime`, `stateFlashIntensity` maps for transition tracking
+- Implemented `applyFlashEffect()` for state transition pulse/flash animation
+- Flash intensity decays exponentially over 1.5 seconds using linear interpolation
 
 ## [0.1.2] - 2026-01-21
 
