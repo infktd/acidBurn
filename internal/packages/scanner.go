@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+// nixStoreRegex parses Nix store path components.
+// Pattern explanation:
+// - ^([a-z0-9]+) - matches the hash at the start
+// - -(.+?) - matches the package name (non-greedy to allow backtracking)
+// - (?:-([0-9]+[0-9.\-a-z]*))? - optionally matches version starting with a digit
+var nixStoreRegex = regexp.MustCompile(`^([a-z0-9]+)-(.+?)(?:-([0-9]+[0-9.\-a-z]*))?$`)
+
 // parseNixStorePath extracts package name, version, and hash from a Nix store path.
 // Format: /nix/store/<hash>-<name>-<version>/...
 // Returns: (name, version, hash)
@@ -27,25 +34,20 @@ func parseNixStorePath(path string) (string, string, string) {
 	}
 
 	// Parse: <hash>-<name>-<version>
-	// Regex: (<hash>)-(<name>)-(<version>) where version is optional
-	re := regexp.MustCompile(`^([a-z0-9]+)-(.+?)(?:-([0-9].*))?$`)
-	matches := re.FindStringSubmatch(storeComponent)
+	matches := nixStoreRegex.FindStringSubmatch(storeComponent)
 
 	if len(matches) < 3 {
 		// Fallback: just hash-name format
-		dashIdx := strings.Index(storeComponent, "-")
-		if dashIdx > 0 {
-			return storeComponent[dashIdx+1:], "", storeComponent[:dashIdx]
+		firstDashIndex := strings.Index(storeComponent, "-")
+		if firstDashIndex > 0 {
+			return storeComponent[firstDashIndex+1:], "", storeComponent[:firstDashIndex]
 		}
 		return storeComponent, "", ""
 	}
 
 	hash := matches[1]
 	name := matches[2]
-	version := ""
-	if len(matches) > 3 {
-		version = matches[3]
-	}
+	version := matches[3] // Will be empty string if group didn't match
 
 	return name, version, hash
 }
