@@ -1,15 +1,15 @@
-# acidBurn
+# devdash
 
 [![Made with Nix](https://img.shields.io/badge/Made_with-Nix-5277C3?logo=nixos&logoColor=white)](https://nixos.org)
 [![Made with devenv](https://img.shields.io/badge/Made_with-devenv-00D9FF?logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTUwIDEwTDkwIDUwTDUwIDkwTDEwIDUwTDUwIDEwWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=&logoColor=white)](https://devenv.sh)
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)](https://go.dev)
-[![GitHub Stars](https://img.shields.io/github/stars/infktd/acidburn?style=social)](https://github.com/infktd/acidburn)
+[![GitHub Stars](https://img.shields.io/github/stars/infktd/devdash?style=social)](https://github.com/infktd/devdash)
 
 A terminal user interface (TUI) for managing devenv.sh environments. Think of it as "Docker Desktop for Nix" - a unified control plane for all your devenv projects.
 
 ## Overview
 
-acidBurn provides a centralized dashboard for monitoring and controlling multiple devenv projects. It communicates with process-compose daemons via Unix sockets to display service status, stream logs, and manage service lifecycles.
+devdash provides a centralized dashboard for monitoring and controlling multiple devenv projects. It communicates with process-compose daemons via Unix sockets to display service status, stream logs, and manage service lifecycles.
 
 ### Key Features
 
@@ -19,7 +19,7 @@ acidBurn provides a centralized dashboard for monitoring and controlling multipl
 - **Log Streaming**: Real-time log viewing with search, filtering, and level-based colorization
 - **Health Monitoring**: Track service crashes, recoveries, and state changes
 - **System Notifications**: Desktop notifications for critical events (crashes, recoveries)
-- **Theming**: Multiple color themes (acid-green, nord, dracula)
+- **Theming**: Multiple color themes (matrix, nord, dracula)
 - **Customizable UI**: Configurable sidebar width, timestamps, and log behavior
 
 ## Requirements
@@ -31,27 +31,27 @@ acidBurn provides a centralized dashboard for monitoring and controlling multipl
 ## Installation
 
 ```bash
-go install github.com/infktd/acidburn@latest
+go install github.com/infktd/devdash@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/infktd/acidburn
-cd acidburn
-go build -o acidburn .
+git clone https://github.com/infktd/devdash
+cd devdash
+go build -o devdash .
 ```
 
 ## Usage
 
 ```bash
-acidburn
+devdash
 ```
 
-On first run, acidBurn will:
-1. Create a default configuration at `~/.config/acidburn/config.yaml`
+On first run, devdash will:
+1. Create a default configuration at `~/.config/devdash/config.yaml`
 2. Scan configured directories for devenv projects
-3. Create a project registry at `~/.config/acidburn/registry.yaml`
+3. Create a project registry at `~/.config/devdash/registry.yaml`
 
 ## Keybindings
 
@@ -104,7 +104,7 @@ On first run, acidBurn will:
 
 ## Configuration
 
-Configuration is stored at `~/.config/acidburn/config.yaml`:
+Configuration is stored at `~/.config/devdash/config.yaml`:
 
 ```yaml
 projects:
@@ -124,7 +124,7 @@ notifications:
       critical_only: false
 
 ui:
-  theme: acid-green        # acid-green, nord, dracula
+  theme: matrix        # matrix, nord, dracula
   default_log_view: focused
   log_follow: true
   show_timestamps: true
@@ -138,7 +138,7 @@ polling:
 
 ## Project States
 
-acidBurn detects and displays project states:
+devdash detects and displays project states:
 
 | State | Description |
 |-------|-------------|
@@ -151,7 +151,7 @@ acidBurn detects and displays project states:
 ## Architecture
 
 ```
-acidBurn
+devdash
 ├── main.go                 # Entry point
 └── internal/
     ├── compose/            # process-compose API client
@@ -185,9 +185,9 @@ acidBurn
 
 ## How It Works
 
-1. **Project Discovery**: On startup, acidBurn scans configured directories for `devenv.nix` files, identifying devenv projects.
+1. **Project Discovery**: On startup, devdash scans configured directories for `devenv.nix` files, identifying devenv projects.
 
-2. **Socket Communication**: For each running project, acidBurn connects to the process-compose Unix socket at `.devenv/run/pc.sock` and communicates via the REST API.
+2. **Socket Communication**: For each running project, devdash connects to the process-compose Unix socket at `.devenv/run/pc.sock` and communicates via the REST API.
 
 3. **State Detection**: Project state is determined by attempting to connect to the socket:
    - Connection succeeds: Running
@@ -197,11 +197,11 @@ acidBurn
 
 4. **Log Streaming**: Logs are fetched via the process-compose API and displayed with automatic level detection (ERROR, WARN, INFO, DEBUG) and colorization.
 
-5. **Health Monitoring**: acidBurn tracks service state changes and emits events for crashes and recoveries, triggering toast notifications and optional desktop notifications.
+5. **Health Monitoring**: devdash tracks service state changes and emits events for crashes and recoveries, triggering toast notifications and optional desktop notifications.
 
 ## Themes
 
-### acid-green (default)
+### matrix (default)
 Classic hacker aesthetic with bright green on black.
 
 ### nord

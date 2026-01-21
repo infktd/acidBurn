@@ -7,7 +7,7 @@ import (
 )
 
 func TestToastManagerShow(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	tm := NewToastManager(styles, 60)
 
 	tm.Show("Test message", ToastInfo, 5*time.Second)
@@ -24,7 +24,7 @@ func TestToastManagerShow(t *testing.T) {
 }
 
 func TestToastManagerDismiss(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	tm := NewToastManager(styles, 60)
 
 	tm.Show("Test", ToastError, 0)
@@ -39,7 +39,7 @@ func TestToastManagerDismiss(t *testing.T) {
 }
 
 func TestToastManagerLevels(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	tm := NewToastManager(styles, 60)
 
 	tests := []struct {
@@ -64,7 +64,7 @@ func TestToastManagerLevels(t *testing.T) {
 }
 
 func TestToastManagerView(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	tm := NewToastManager(styles, 60)
 
 	// No toast - view should be empty
@@ -85,7 +85,7 @@ func TestToastManagerView(t *testing.T) {
 }
 
 func TestToastOverwrite(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	tm := NewToastManager(styles, 60)
 
 	tm.Show("First", ToastInfo, 0)

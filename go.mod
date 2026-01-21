@@ -1,4 +1,4 @@
-module github.com/infktd/acidburn
+module github.com/infktd/devdash
 
 go 1.25.4
 

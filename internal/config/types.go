@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 )
 
-// Config represents the acidBurn configuration.
+// Config represents the devdash configuration.
 type Config struct {
 	Projects      ProjectsConfig      `yaml:"projects"`
 	Notifications NotificationsConfig `yaml:"notifications"`
@@ -73,7 +73,7 @@ func Default() *Config {
 			CriticalOnly:  false,
 		},
 		UI: UIConfig{
-			Theme:          "acid-green",
+			Theme:          "matrix",
 			DefaultLogView: "focused",
 			LogFollow:      true,
 			ShowTimestamps: true,

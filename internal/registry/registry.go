@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	registryDir  = "acidburn"
+	registryDir  = "devdash"
 	registryFile = "projects.yaml"
 )
 

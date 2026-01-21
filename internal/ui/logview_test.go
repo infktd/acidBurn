@@ -7,7 +7,7 @@ import (
 )
 
 func TestLogViewRender(t *testing.T) {
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	styles := NewStyles(theme)
 
 	lv := NewLogView(styles, 80, 10)
@@ -25,7 +25,7 @@ func TestLogViewRender(t *testing.T) {
 }
 
 func TestLogViewFollowMode(t *testing.T) {
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	styles := NewStyles(theme)
 
 	lv := NewLogView(styles, 80, 5)
@@ -43,7 +43,7 @@ func TestLogViewFollowMode(t *testing.T) {
 }
 
 func TestLogViewScrolling(t *testing.T) {
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	styles := NewStyles(theme)
 
 	lv := NewLogView(styles, 80, 3) // Only 3 visible lines

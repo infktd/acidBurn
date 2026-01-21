@@ -16,9 +16,9 @@ type Theme struct {
 
 // Themes contains all available themes.
 var Themes = map[string]Theme{
-	// Signature acidBurn theme
-	"acid-green": {
-		Name:       "acid-green",
+	// Matrix - Classic green on black hacker theme
+	"matrix": {
+		Name:       "matrix",
 		Primary:    lipgloss.Color("#39FF14"),
 		Secondary:  lipgloss.Color("#00FF41"),
 		Background: lipgloss.Color("#0D0D0D"),
@@ -113,10 +113,10 @@ var Themes = map[string]Theme{
 	},
 }
 
-// GetTheme returns a theme by name, defaulting to acid-green.
+// GetTheme returns a theme by name, defaulting to matrix.
 func GetTheme(name string) Theme {
 	if theme, ok := Themes[name]; ok {
 		return theme
 	}
-	return Themes["acid-green"]
+	return Themes["matrix"]
 }

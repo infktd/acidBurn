@@ -1,4 +1,4 @@
-# acidBurn Design Document
+# devdash Design Document
 
 **Date:** 2026-01-20
 **Status:** Approved
@@ -6,7 +6,7 @@
 
 ## Overview
 
-acidBurn is a polished TUI command center for managing devenv.sh environments across macOS and Linux. It functions as "Docker Desktop for Nix" - services run as background daemons, and the TUI acts as a control plane that attaches/detaches freely.
+devdash is a polished TUI command center for managing devenv.sh environments across macOS and Linux. It functions as "Docker Desktop for Nix" - services run as background daemons, and the TUI acts as a control plane that attaches/detaches freely.
 
 ### Tech Stack
 
@@ -21,7 +21,7 @@ acidBurn is a polished TUI command center for managing devenv.sh environments ac
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    acidBurn TUI                      │
+│                    devdash TUI                      │
 │  (Bubble Tea app - attaches/detaches from services) │
 └──────────────────────┬──────────────────────────────┘
                        │ REST API / Socket
@@ -36,7 +36,7 @@ acidBurn is a polished TUI command center for managing devenv.sh environments ac
    (user-defined in devenv.nix)
 ```
 
-**Key Principle:** acidBurn never manages processes directly. It's a wrapper around devenv/process-compose, communicating via the process-compose REST API and socket at `.devenv/state/process-compose/`.
+**Key Principle:** devdash never manages processes directly. It's a wrapper around devenv/process-compose, communicating via the process-compose REST API and socket at `.devenv/state/process-compose/`.
 
 ---
 
@@ -61,7 +61,7 @@ var scanExclusions = []string{
 
 **Persistent Registry:**
 ```yaml
-# ~/.config/acidburn/projects.yaml
+# ~/.config/devdash/projects.yaml
 projects:
   - id: a1b2c3d4  # hash of path for uniqueness
     path: ~/code/my-saas
@@ -112,7 +112,7 @@ func getProjectState(path string) ProjectState {
 ### Layout: 3-Pane Command Center
 
 ```
-┌─ acidBurn ─── FLEET > MY-SAAS > COLLECTOR ─── PIDs: 8 ── MEM: 1.4GB ── Nix: OK ── 14:32 ● ─┐
+┌─ devdash ─── FLEET > MY-SAAS > COLLECTOR ─── PIDs: 8 ── MEM: 1.4GB ── Nix: OK ── 14:32 ● ─┐
 │                                                                                              │
 │  PROJECTS [2/8]         │  [Project: MY-SAAS]                                   ● HEALTHY   │
 │  / search...            │ ┌────────────────────────────────────────────────────────────────┐│
@@ -172,7 +172,7 @@ When no project selected, show "Fleet Overview" - aggregated stats, recent activ
 ```go
 func (m model) View() string {
     // 1. Render the Top Bar
-    header := headerStyle.Render(fmt.Sprintf(" acidBurn ─── %s ─── Nix: %s", m.Breadcrumbs, m.NixStatus))
+    header := headerStyle.Render(fmt.Sprintf(" devdash ─── %s ─── Nix: %s", m.Breadcrumbs, m.NixStatus))
 
     // 2. Render the Sidebar (Fixed Width)
     sidebar := sidebarStyle.Width(25).Height(m.Height - 4).Render(m.Sidebar.View())
@@ -200,15 +200,15 @@ func (m model) View() string {
 
 ## Section 3: Service Management & Background Processes
 
-### Architecture: acidBurn as Control Plane
+### Architecture: devdash as Control Plane
 
-acidBurn never manages processes directly. It communicates with process-compose via:
+devdash never manages processes directly. It communicates with process-compose via:
 - **Unix socket:** `.devenv/state/process-compose/pc.sock`
 - **REST API:** process-compose exposes endpoints for status, start, stop, logs
 
 ### Lifecycle Commands
 
-| Action | acidBurn executes | Result |
+| Action | devdash executes | Result |
 |--------|-------------------|--------|
 | Start Project | `devenv up -d` | Launches process-compose daemon |
 | Stop Project | API: `POST /project/stop` | Graceful shutdown of all services |
@@ -418,7 +418,7 @@ func (lb *LogBuffer) View(viewportHeight int) string {
 func (m *model) notifyServiceCrash(service Service) {
     if m.config.Notifications.SystemEnabled {
         beeep.Alert(
-            "acidBurn: Service Crashed",
+            "devdash: Service Crashed",
             fmt.Sprintf("%s in %s exited unexpectedly", service.Name, service.Project),
             ""  // icon path
         )
@@ -507,12 +507,12 @@ case ServiceCrashedMsg:
 
 ### Source of Truth
 
-`~/.config/acidburn/config.yaml`
+`~/.config/devdash/config.yaml`
 
 ### Full Config Structure
 
 ```yaml
-# ~/.config/acidburn/config.yaml
+# ~/.config/devdash/config.yaml
 
 # Project discovery
 projects:
@@ -536,7 +536,7 @@ notifications:
 
 # UI preferences
 ui:
-  theme: "acid-green"
+  theme: "matrix"
   default_log_view: "focused"  # focused | unified
   log_follow: true
   show_timestamps: true
@@ -619,7 +619,7 @@ case ConfigUpdatedMsg:
 
 ```go
 var themes = map[string]Theme{
-    "acid-green": {
+    "matrix": {
         Primary:    lipgloss.Color("#39FF14"),
         Secondary:  lipgloss.Color("#00FF41"),
         Background: lipgloss.Color("#0D0D0D"),
@@ -671,7 +671,7 @@ Shown on first launch during initial project scan:
 ┌────────────────────────────────────────────────────────────┐
 │                                                            │
 │                    [ASCII ART HERE]                        │
-│                       acidBurn                             │
+│                       devdash                             │
 │                                                            │
 │              Scanning for devenv projects...               │
 │              ████████████░░░░░░░░░  52%                    │
@@ -798,7 +798,7 @@ Logs focused:
 | 0. Core | Go + Bubble Tea | Reactive TUI engine |
 | 1. Registry | Smart Discovery | Auto-find `devenv.nix`, persist to `projects.yaml` |
 | 2. Interface | The Cockpit | 3-pane layout with telemetry header |
-| 3. Backend | REST/Socket Control | `process-compose` as daemon, acidBurn as control plane |
+| 3. Backend | REST/Socket Control | `process-compose` as daemon, devdash as control plane |
 | 4. Feedback | Log Interleaver | Color-coded unified/focused streams with search |
 | 5. Awareness | Multi-Tier Alerts | OS notifications + in-TUI toasts + history |
 | 6. Config | YAML + huh Forms | Reproducible config with TUI editor |

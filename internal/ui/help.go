@@ -166,7 +166,7 @@ func (h *HelpPanel) View() string {
 	content += footerStyle.Render(footerText)
 
 	// Fixed size modal box (80 cols x 28 rows)
-	modalStyle := h.styles.FocusedBorder.
+	modalStyle := h.styles.ModalBorder.
 		Width(80).
 		Height(28).
 		Padding(1, 2)

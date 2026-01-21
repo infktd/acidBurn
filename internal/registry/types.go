@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/infktd/acidburn/internal/compose"
+	"github.com/infktd/devdash/internal/compose"
 )
 
 // ProjectState represents the current state of a project.

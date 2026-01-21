@@ -5,44 +5,44 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lucasb-eyer/go-colorful"
 )
 
-// ASCII art options for acidBurn
+// ASCII art options for devdash
 var asciiArtOptions = map[string]string{
 	"default": `
-    ___    __________  ____  __  ______  _   __
-   /   |  / ____/  _/ / __ \/ / / / __ \/ | / /
-  / /| | / /    / /  / / / / /_/ / /_/ /  |/ /
- / ___ |/ /____/ /  / /_/ / __  / _, _/ /|  /
-/_/  |_|\____/___/ /_____/_/ /_/_/ |_/_/ |_/
-`,
-	"block": `
- █████╗  ██████╗██╗██████╗ ██████╗ ██╗   ██╗██████╗ ███╗   ██╗
-██╔══██╗██╔════╝██║██╔══██╗██╔══██╗██║   ██║██╔══██╗████╗  ██║
-███████║██║     ██║██║  ██║██████╔╝██║   ██║██████╔╝██╔██╗ ██║
-██╔══██║██║     ██║██║  ██║██╔══██╗██║   ██║██╔══██╗██║╚██╗██║
-██║  ██║╚██████╗██║██████╔╝██████╔╝╚██████╔╝██║  ██║██║ ╚████║
-╚═╝  ╚═╝ ╚═════╝╚═╝╚═════╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝
+ ██████╗ ███████╗██╗   ██╗██████╗  █████╗ ███████╗██╗  ██╗
+ ██╔══██╗██╔════╝██║   ██║██╔══██╗██╔══██╗██╔════╝██║  ██║
+ ██║  ██║█████╗  ██║   ██║██║  ██║███████║███████╗███████║
+ ██║  ██║██╔══╝  ╚██╗ ██╔╝██║  ██║██╔══██║╚════██║██╔══██║
+ ██████╔╝███████╗ ╚████╔╝ ██████╔╝██║  ██║███████║██║  ██║
+ ╚═════╝ ╚══════╝  ╚═══╝  ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝`,
+	"slant": `
+    ____  _______    ____  ___   _____ __  __
+   / __ \/ ____/ |  / / / / /   / ___// / / /
+  / / / / __/  | | / / / / /    \__ \/ /_/ /
+ / /_/ / /___  | |/ / /_/ /    ___/ / __  /
+/_____/_____/  |___/\____/    /____/_/ /_/
 `,
 	"small": `
-          _     _ ____
-  __ _ __(_) __| | __ ) _   _ _ __ _ __
- / _' / __| |/ _' |  _ \| | | | '__| '_ \
-| (_| \__ \ | (_| | |_) | |_| | |  | | | |
- \__,_|___/_|\__,_|____/ \__,_|_|  |_| |_|
+     _                _           _
+  __| | _____   ____| | __ _ ___| |__
+ / _' |/ _ \ \ / / _' |/ _' / __| '_ \
+| (_| |  __/\ V / (_| | (_| \__ \ | | |
+ \__,_|\___| \_/ \__,_|\__,_|___/_| |_|
 `,
 	"minimal": `
 ┌─────────────────────────────┐
-│     a c i d B U R N         │
+│       d e v D A S H         │
 │     devenv control plane    │
 └─────────────────────────────┘
 `,
-	"hacker": `
-    █████  ██████ ██ ██████  ██████  ██    ██ ██████  ███    ██
-   ██   ██ ██     ██ ██   ██ ██   ██ ██    ██ ██   ██ ████   ██
-   ███████ ██     ██ ██   ██ ██████  ██    ██ ██████  ██ ██  ██
-   ██   ██ ██     ██ ██   ██ ██   ██ ██    ██ ██   ██ ██  ██ ██
-   ██   ██  █████ ██ ██████  ██████   ██████  ██   ██ ██   ████
+	"cyber": `
+   ██████  ███████ ██    ██ ██████   █████  ███████ ██   ██
+   ██   ██ ██      ██    ██ ██   ██ ██   ██ ██      ██   ██
+   ██   ██ █████   ██    ██ ██   ██ ███████ ███████ ███████
+   ██   ██ ██       ██  ██  ██   ██ ██   ██      ██ ██   ██
+   ██████  ███████   ████   ██████  ██   ██ ███████ ██   ██
 `,
 }
 
@@ -57,6 +57,7 @@ type SplashScreen struct {
 	progress float64 // 0.0 to 1.0
 	message  string
 	asciiArt string
+	frame    int // Animation frame counter
 }
 
 // NewSplashScreen creates a new splash screen.
@@ -133,25 +134,25 @@ func (s *SplashScreen) View() string {
 		return ""
 	}
 
-	// Get theme color for ASCII art
-	artColor := lipgloss.Color("#00FF00") // Default acid green
+	// Get theme colors
+	primaryColor := lipgloss.Color("#00FF00") // Default
+	mutedColor := lipgloss.Color("#555555")
 	if s.styles != nil {
-		artColor = s.styles.theme.Primary
+		primaryColor = s.styles.theme.Primary
+		mutedColor = s.styles.theme.Muted
 	}
 
-	// Style the ASCII art
+	// Style the ASCII art with bold primary color
 	artStyle := lipgloss.NewStyle().
-		Foreground(artColor).
+		Foreground(primaryColor).
 		Bold(true)
-
-	// Center the ASCII art
 	art := artStyle.Render(s.asciiArt)
 
-	// Title
-	titleStyle := lipgloss.NewStyle().
-		Foreground(artColor).
-		Bold(true)
-	title := titleStyle.Render("acidBurn")
+	// Tagline
+	taglineStyle := lipgloss.NewStyle().
+		Foreground(mutedColor).
+		Italic(true)
+	tagline := taglineStyle.Render("── devenv fleet control ──")
 
 	// Message
 	msgStyle := lipgloss.NewStyle().
@@ -166,7 +167,7 @@ func (s *SplashScreen) View() string {
 		lipgloss.Center,
 		art,
 		"",
-		title,
+		tagline,
 		"",
 		message,
 		progressBar,
@@ -182,27 +183,75 @@ func (s *SplashScreen) View() string {
 }
 
 func (s *SplashScreen) renderProgressBar() string {
-	barWidth := 30
+	barWidth := 40
 	filled := int(s.progress * float64(barWidth))
-	empty := barWidth - filled
 
-	// Progress bar characters
-	filledChar := "\u2588" // Full block
-	emptyChar := "\u2591"  // Light shade
-
-	bar := strings.Repeat(filledChar, filled) + strings.Repeat(emptyChar, empty)
-	percent := fmt.Sprintf("%3.0f%%", s.progress*100)
-
-	// Use theme primary color for progress bar
-	barColor := lipgloss.Color("#00FF00") // Default
+	// Get theme colors for gradient
+	primaryHex := "#00FF00"
+	secondaryHex := "#00FFFF" // Cyan as secondary gradient color
+	mutedHex := "#333333"
 	if s.styles != nil {
-		barColor = s.styles.theme.Primary
+		primaryHex = string(s.styles.theme.Primary)
+		mutedHex = string(s.styles.theme.Muted)
+		// Use secondary color for the gradient end
+		secondaryHex = string(s.styles.theme.Secondary)
 	}
 
-	barStyle := lipgloss.NewStyle().Foreground(barColor)
-	percentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	// Parse colors for gradient blending
+	primaryCol, _ := colorful.Hex(primaryHex)
+	secondaryCol, _ := colorful.Hex(secondaryHex)
 
-	return barStyle.Render(bar) + " " + percentStyle.Render(percent)
+	// Wave characters for leading edge animation
+	waveChars := []rune{'▓', '▒', '░'}
+
+	// Build the progress bar with per-character gradient coloring
+	var result strings.Builder
+	result.WriteString("[")
+
+	for i := 0; i < barWidth; i++ {
+		if i < filled {
+			// Calculate gradient position (0.0 to 1.0 across filled portion)
+			var gradientPos float64
+			if filled > 1 {
+				gradientPos = float64(i) / float64(filled-1)
+			}
+
+			// Blend colors for gradient effect
+			blendedColor := primaryCol.BlendLuv(secondaryCol, gradientPos)
+
+			// Determine character (wave animation at leading edge)
+			char := '█'
+			if i >= filled-3 && filled < barWidth {
+				waveIdx := (filled - 1 - i + s.frame) % 3
+				if waveIdx < 0 {
+					waveIdx = 0
+				}
+				char = waveChars[waveIdx]
+			}
+
+			// Apply gradient color to this character
+			charStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(blendedColor.Hex()))
+			result.WriteString(charStyle.Render(string(char)))
+		} else {
+			// Empty portion
+			emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(mutedHex))
+			result.WriteString(emptyStyle.Render("░"))
+		}
+	}
+
+	result.WriteString("] ")
+
+	// Percentage
+	percent := fmt.Sprintf("%3.0f%%", s.progress*100)
+	percentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Bold(true)
+	result.WriteString(percentStyle.Render(percent))
+
+	return result.String()
+}
+
+// Tick advances the animation frame.
+func (s *SplashScreen) Tick() {
+	s.frame++
 }
 
 // Progress returns the current progress value.

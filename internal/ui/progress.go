@@ -82,7 +82,7 @@ func (p *ProgressBar) View() string {
 	emptyPart := strings.Repeat(emptyChar, barWidth-filled)
 
 	// Get theme for colors
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	if p.styles != nil {
 		// Use style colors
 	}

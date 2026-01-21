@@ -133,7 +133,7 @@ func (c *ConfirmDialog) View() string {
 	content += "\n" + helpStyle.Render("←/→ or Tab to switch  [Enter] Confirm  [Esc] Cancel")
 
 	// Wrap in a box (50 wide x 10 tall)
-	boxStyle := c.styles.FocusedBorder.
+	boxStyle := c.styles.ModalBorder.
 		Width(50).
 		Height(10).
 		Padding(1, 2)
