@@ -51,3 +51,65 @@ func parseNixStorePath(path string) (string, string, string) {
 
 	return name, version, hash
 }
+
+// categorizePackage determines the package type based on name patterns.
+func categorizePackage(name string) string {
+	lowerName := strings.ToLower(name)
+
+	// Go packages
+	if strings.HasPrefix(lowerName, "go") ||
+		lowerName == "gopls" ||
+		lowerName == "gofmt" ||
+		lowerName == "godoc" {
+		return "Go"
+	}
+
+	// Python packages
+	if strings.Contains(lowerName, "python") ||
+		lowerName == "pip" ||
+		lowerName == "pytest" ||
+		lowerName == "poetry" {
+		return "Python"
+	}
+
+	// Node.js packages
+	if lowerName == "node" ||
+		lowerName == "nodejs" ||
+		lowerName == "npm" ||
+		lowerName == "npx" ||
+		lowerName == "yarn" {
+		return "Node.js"
+	}
+
+	// Rust packages
+	if lowerName == "cargo" ||
+		lowerName == "rustc" ||
+		lowerName == "rustup" {
+		return "Rust"
+	}
+
+	// C/C++ compilers
+	if lowerName == "gcc" ||
+		lowerName == "g++" ||
+		lowerName == "clang" ||
+		lowerName == "clang++" {
+		return "C/C++"
+	}
+
+	// Ruby
+	if lowerName == "ruby" ||
+		lowerName == "gem" ||
+		lowerName == "bundle" {
+		return "Ruby"
+	}
+
+	// Java
+	if lowerName == "java" ||
+		lowerName == "javac" ||
+		lowerName == "maven" ||
+		lowerName == "gradle" {
+		return "Java"
+	}
+
+	return "Other"
+}
