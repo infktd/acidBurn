@@ -114,8 +114,11 @@ type Model struct {
 	projectsList  list.Model
 
 	// Loading state
-	loadingOp      string // Description of current operation
-	loadingProject string // Project being operated on
+	loadingOp       string    // Description of current operation
+	loadingProject  string    // Project being operated on
+	loadingProgress float64   // Progress percentage (0.0 to 1.0)
+	loadingStage    string    // Current stage description
+	loadingStarted  time.Time // When operation started
 
 	// Compose clients per project (keyed by project path)
 	clients map[string]*compose.Client
@@ -149,6 +152,7 @@ type Model struct {
 // Messages for async operations
 type tickMsg time.Time
 type activityTickMsg time.Time
+type progressTickMsg time.Time
 type pollServicesMsg struct{}
 type servicesUpdatedMsg struct {
 	services []compose.ProcessStatus
@@ -307,6 +311,12 @@ func (m *Model) tickCmd() tea.Cmd {
 func (m *Model) activityTickCmd() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		return activityTickMsg(t)
+	})
+}
+
+func (m *Model) progressTickCmd() tea.Cmd {
+	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg {
+		return progressTickMsg(t)
 	})
 }
 
@@ -559,6 +569,46 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, m.activityTickCmd())
 
+	case progressTickMsg:
+		// Update loading progress for ongoing operations
+		if m.loadingOp != "" && !m.loadingStarted.IsZero() {
+			elapsed := time.Since(m.loadingStarted).Seconds()
+
+			// Estimate stages based on operation type
+			var stage string
+
+			switch m.loadingOp {
+			case "Starting":
+				if elapsed < 2.5 {
+					stage = "Initializing environment..."
+					m.loadingProgress = elapsed / 2.5 * 0.3 // 0-30%
+				} else if elapsed < 5.5 {
+					stage = "Starting services..."
+					m.loadingProgress = 0.3 + ((elapsed-2.5)/3.0)*0.4 // 30-70%
+				} else {
+					stage = "Services online"
+					m.loadingProgress = 0.7 + ((elapsed-5.5)/2.5)*0.3 // 70-100%
+				}
+
+			case "Stopping":
+				if elapsed < 3.0 {
+					stage = "Stopping services..."
+					m.loadingProgress = elapsed / 3.0 * 0.6 // 0-60%
+				} else {
+					stage = "Cleaning up..."
+					m.loadingProgress = 0.6 + ((elapsed-3.0)/2.0)*0.4 // 60-100%
+				}
+			}
+
+			// Cap at 95% until operation actually completes
+			if m.loadingProgress > 0.95 {
+				m.loadingProgress = 0.95
+			}
+
+			m.loadingStage = stage
+			cmds = append(cmds, m.progressTickCmd())
+		}
+
 	case pollServicesMsg:
 		// Poll the currently selected project
 		if p := m.currentProject(); p != nil {
@@ -732,6 +782,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Clear loading state
 		m.loadingOp = ""
 		m.loadingProject = ""
+		m.loadingProgress = 0
+		m.loadingStage = ""
+		m.loadingStarted = time.Time{}
 		if msg.err != nil {
 			m.toast.Show(fmt.Sprintf("Failed to start %s: %v", msg.project, msg.err), ToastError, 5*time.Second)
 		} else {
@@ -744,6 +797,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Clear loading state
 		m.loadingOp = ""
 		m.loadingProject = ""
+		m.loadingProgress = 0
+		m.loadingStage = ""
+		m.loadingStarted = time.Time{}
 		if msg.err != nil {
 			m.toast.Show(fmt.Sprintf("Failed to stop %s: %v", msg.project, msg.err), ToastError, 5*time.Second)
 		} else {
@@ -1067,8 +1123,11 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// Start idle project with devenv up -d
 				m.loadingOp = "Starting"
 				m.loadingProject = p.Name
+				m.loadingProgress = 0.0
+				m.loadingStage = "Initializing..."
+				m.loadingStarted = time.Now()
 				m.toast.Show(fmt.Sprintf("Starting %s...", p.Name), ToastInfo, 3*time.Second)
-				return m, tea.Batch(m.startProjectCmd(p), m.toast.TickCmd())
+				return m, tea.Batch(m.startProjectCmd(p), m.toast.TickCmd(), m.progressTickCmd())
 			} else if client := m.getOrCreateClient(p); client != nil {
 				// Start all services in running project
 				var cmds []tea.Cmd
@@ -1086,8 +1145,11 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if state == registry.StateRunning || state == registry.StateDegraded {
 				m.loadingOp = "Stopping"
 				m.loadingProject = p.Name
+				m.loadingProgress = 0.0
+				m.loadingStage = "Stopping..."
+				m.loadingStarted = time.Now()
 				m.toast.Show(fmt.Sprintf("Stopping %s...", p.Name), ToastInfo, 3*time.Second)
-				return m, tea.Batch(m.stopProjectCmd(p), m.toast.TickCmd())
+				return m, tea.Batch(m.stopProjectCmd(p), m.toast.TickCmd(), m.progressTickCmd())
 			}
 		}
 		return m, nil
@@ -1997,6 +2059,35 @@ func renderMemorySparkline(values []int64) string {
 	return renderSparkline(floatValues)
 }
 
+// renderProgressBar renders a progress bar with percentage and stage description.
+// Example output: "[██████░░░░] 60% Starting services..."
+func (m *Model) renderProgressBar(progress float64, stage string, width int) string {
+	if width < 20 {
+		width = 20 // Minimum width
+	}
+
+	// Calculate bar width (reserve space for brackets, percentage, and stage)
+	// Format: "[bar] xx% stage"
+	barWidth := 10 // Fixed bar width for consistency
+	percentage := int(progress * 100)
+
+	// Build the bar using block characters
+	filledWidth := int(float64(barWidth) * progress)
+	if filledWidth > barWidth {
+		filledWidth = barWidth
+	}
+
+	bar := strings.Repeat("█", filledWidth) + strings.Repeat("░", barWidth-filledWidth)
+
+	// Build final string
+	result := fmt.Sprintf("[%s] %2d%% %s", bar, percentage, stage)
+
+	// Style with primary color
+	return lipgloss.NewStyle().
+		Foreground(m.styles.theme.Primary).
+		Render(result)
+}
+
 // renderSectionTitle renders a section title in code comment style with separator line.
 // Uses primary color if focused, muted color otherwise.
 func (m *Model) renderSectionTitle(title string, focused bool, width int) string {
@@ -2106,11 +2197,13 @@ func (d *projectDelegate) Render(w io.Writer, m list.Model, index int, item list
 		return
 	}
 
-	// Get status glyph (or spinner if loading)
+	// Get status glyph (or progress bar if loading)
 	var glyph string
+	var progressBar string
 	if d.model != nil && d.model.loadingProject == projItem.project.Name && d.model.loadingOp != "" {
-		// Show spinner when this project is loading
-		glyph = d.model.spinner.View()
+		// Show progress bar when this project is loading
+		progressBar = d.model.renderProgressBar(d.model.loadingProgress, d.model.loadingStage, 40)
+		glyph = "" // Don't show status glyph during loading
 	} else {
 		switch projItem.state {
 		case registry.StateRunning:
@@ -2145,5 +2238,10 @@ func (d *projectDelegate) Render(w io.Writer, m list.Model, index int, item list
 		}
 	}
 
-	fmt.Fprintf(w, "%s%s %s", cursor, glyph, name)
+	// Show progress bar during loading, otherwise show normal status + name
+	if progressBar != "" {
+		fmt.Fprintf(w, "%s%s", cursor, progressBar)
+	} else {
+		fmt.Fprintf(w, "%s%s %s", cursor, glyph, name)
+	}
 }

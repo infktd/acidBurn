@@ -27,6 +27,13 @@ This project uses [0ver](https://0ver.org/) versioning.
   - Tab cycles forward through panels (Projects → Services → Logs)
   - Shift+Tab cycles backward through panels (Projects ← Services ← Logs)
   - Tab keybinding now visible in footer for all panes
+- Interactive progress bars for start/stop operations
+  - Detailed progress bar replaces spinner during project operations
+  - Shows percentage and current stage (e.g., "[██████░░░░] 60% Starting services...")
+  - Multi-stage progress tracking with time-based estimation
+  - Starting: Initializing → Starting services → Services online (3 stages)
+  - Stopping: Stopping services → Cleaning up (2 stages)
+  - Progress updates every 200ms for smooth animation
 
 ### Changed
 - Services table column order reorganized: STATUS | ACTIVITY | SERVICE | PID | CPU | MEM | EXIT
@@ -54,6 +61,14 @@ This project uses [0ver](https://0ver.org/) versioning.
 - CPU and MEM columns widened to 18 and 20 characters for sparkline display
 - Added `ShiftTab` key binding for reverse panel navigation
 - Implemented `cycleFocusReverse()` using modulo arithmetic
+- Added `loadingProgress`, `loadingStage`, `loadingStarted` fields for progress tracking
+- Implemented `progressTickMsg` and `progressTickCmd()` for progress updates (200ms intervals)
+- Created `renderProgressBar()` for visual progress display with Unicode blocks (█ and ░)
+- Progress stages calculated based on elapsed time since operation started
+- Starting operation: 3 stages over ~8 seconds (30% / 40% / 30% time allocation)
+- Stopping operation: 2 stages over ~5 seconds (60% / 40% time allocation)
+- Progress capped at 95% until operation actually completes
+- Progress bar replaces project name in sidebar during active operations
 
 ## [0.1.2] - 2026-01-21
 
