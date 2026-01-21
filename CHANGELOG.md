@@ -17,6 +17,16 @@ This project uses [0ver](https://0ver.org/) versioning.
   - Smooth 1.5 second fade from bright to normal intensity
   - Green flash for Running state, yellow/orange for Stopped state
   - Immediately draws attention to state changes
+- Live CPU/Memory sparklines in services table
+  - Inline mini-graphs using Unicode block characters (▁▂▃▄▅▆▇█)
+  - Displays last 10 data points showing resource usage trends
+  - Appears next to current CPU/Memory values (e.g., "45.2% ▃▄▅▇▆▅▄▃")
+  - Auto-normalizes to show relative changes clearly
+  - Visible after 3+ readings collected
+- Bidirectional panel navigation
+  - Tab cycles forward through panels (Projects → Services → Logs)
+  - Shift+Tab cycles backward through panels (Projects ← Services ← Logs)
+  - Tab keybinding now visible in footer for all panes
 
 ### Changed
 - Services table column order reorganized: STATUS | ACTIVITY | SERVICE | PID | CPU | MEM | EXIT
@@ -37,6 +47,13 @@ This project uses [0ver](https://0ver.org/) versioning.
 - Added `serviceStates`, `stateChangeTime`, `stateFlashIntensity` maps for transition tracking
 - Implemented `applyFlashEffect()` for state transition pulse/flash animation
 - Flash intensity decays exponentially over 1.5 seconds using linear interpolation
+- Added `cpuHistory` and `memHistory` maps tracking last 10 readings per service
+- Implemented `renderSparkline()` and `renderMemorySparkline()` for Unicode graph generation
+- Sparklines use 8 Unicode block characters (▁▂▃▄▅▆▇█) for smooth gradients
+- Auto-normalization based on min/max values in history window
+- CPU and MEM columns widened to 18 and 20 characters for sparkline display
+- Added `ShiftTab` key binding for reverse panel navigation
+- Implemented `cycleFocusReverse()` using modulo arithmetic
 
 ## [0.1.2] - 2026-01-21
 
