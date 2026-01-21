@@ -426,3 +426,26 @@ func TestModelPackagesViewInitialized(t *testing.T) {
 		t.Error("packagesView should be initialized")
 	}
 }
+
+func TestShouldShowBothPanes(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+
+	// Narrow terminal - should show single pane
+	m.width = 139
+	if m.shouldShowBothPanes() {
+		t.Error("expected false for width 139")
+	}
+
+	// Wide terminal - should show both panes
+	m.width = 140
+	if !m.shouldShowBothPanes() {
+		t.Error("expected true for width 140")
+	}
+
+	m.width = 200
+	if !m.shouldShowBothPanes() {
+		t.Error("expected true for width 200")
+	}
+}
