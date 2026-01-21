@@ -29,12 +29,17 @@ func main() {
 
 	// Auto-discover projects if enabled
 	if cfg.Projects.AutoDiscover {
-		projects, _ := scanner.Scan(cfg.Projects.ScanPaths, cfg.Projects.ScanDepth)
+		projects, err := scanner.Scan(cfg.Projects.ScanPaths, cfg.Projects.ScanDepth)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: error during project scan: %v\n", err)
+		}
 		for _, path := range projects {
 			reg.AddProject(path)
 		}
 		// Save updated registry
-		_ = registry.Save(registry.Path(), reg)
+		if err := registry.Save(registry.Path(), reg); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save registry: %v\n", err)
+		}
 	}
 
 	// Run TUI

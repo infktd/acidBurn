@@ -104,6 +104,11 @@ type projectStoppedMsg struct {
 	project string
 	err     error
 }
+type serviceOperationMsg struct {
+	service   string
+	operation string // "start", "stop", "restart"
+	err       error
+}
 
 // New creates a new acidBurn model.
 func New(cfg *config.Config, reg *registry.Registry) *Model {
@@ -121,7 +126,7 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 		logView:  NewLogView(styles, 80, 20),
 		toast:    NewToastManager(styles, 60),
 		alerts:   NewAlertHistory(100),
-		settings: NewSettingsPanel(cfg),
+		settings: NewSettingsPanel(cfg, styles, 80, 24),
 		splash:   NewSplashScreen(styles, 80, 24),
 		health:       health.NewMonitor(2 * time.Second),
 		notifier:     notify.NewNotifier(cfg.Notifications.SystemEnabled),
@@ -207,8 +212,50 @@ func (m *Model) startProjectCmd(p *registry.Project) tea.Cmd {
 	return func() tea.Msg {
 		cmd := exec.Command("devenv", "up", "-d")
 		cmd.Dir = projectPath
-		err := cmd.Run()
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Enhance error message with command output
+			if len(output) > 0 {
+				err = fmt.Errorf("%v: %s", err, string(output))
+			}
+		}
 		return projectStartedMsg{project: projectName, err: err}
+	}
+}
+
+// startServiceCmd starts a specific service
+func (m *Model) startServiceCmd(client *compose.Client, serviceName string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.StartProcess(serviceName)
+		return serviceOperationMsg{
+			service:   serviceName,
+			operation: "start",
+			err:       err,
+		}
+	}
+}
+
+// stopServiceCmd stops a specific service
+func (m *Model) stopServiceCmd(client *compose.Client, serviceName string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.StopProcess(serviceName)
+		return serviceOperationMsg{
+			service:   serviceName,
+			operation: "stop",
+			err:       err,
+		}
+	}
+}
+
+// restartServiceCmd restarts a specific service
+func (m *Model) restartServiceCmd(client *compose.Client, serviceName string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.RestartProcess(serviceName)
+		return serviceOperationMsg{
+			service:   serviceName,
+			operation: "restart",
+			err:       err,
+		}
 	}
 }
 
@@ -222,12 +269,21 @@ func (m *Model) stopProjectCmd(p *registry.Project) tea.Cmd {
 		client := compose.NewClient(socketPath)
 		if err := client.Connect(); err == nil {
 			err = client.ShutdownProject()
+			if err != nil {
+				err = fmt.Errorf("API shutdown failed: %v", err)
+			}
 			return projectStoppedMsg{project: projectName, err: err}
 		}
 		// Fallback to devenv down
 		cmd := exec.Command("devenv", "down")
 		cmd.Dir = projectPath
-		err := cmd.Run()
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Enhance error message with command output
+			if len(output) > 0 {
+				err = fmt.Errorf("%v: %s", err, string(output))
+			}
+		}
 		return projectStoppedMsg{project: projectName, err: err}
 	}
 }
@@ -236,27 +292,16 @@ func (m *Model) stopProjectCmd(p *registry.Project) tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	// Settings mode - delegate ALL messages to settings panel
+	// Settings mode - delegate to settings panel
 	if m.showSettings {
-		// Check for Esc to close
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			if keyMsg.String() == "esc" {
-				m.settings.Cancel()
-				m.showSettings = false
-				return m, nil
-			}
-		}
-
 		var cmd tea.Cmd
 		m.settings, cmd = m.settings.Update(msg)
-		// Check if form is completed
+
+		// Check if modal was closed
 		if !m.settings.IsVisible() {
 			m.showSettings = false
-			// Apply theme change if saved
-			if m.settings.WasSaved() {
-				m.styles = NewStyles(GetTheme(m.config.UI.Theme))
-			}
 		}
+
 		return m, cmd
 	}
 
@@ -269,6 +314,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.logView.SetSize(m.width-m.config.UI.SidebarWidth-8, m.height/2)
 		m.splash.SetSize(m.width, m.height)
+		m.settings.SetSize(m.width, m.height)
 		m.toast = NewToastManager(m.styles, m.width-10)
 
 	case splashDoneMsg:
@@ -423,6 +469,33 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.services = nil
 			m.logView.buffer.Clear()
 		}
+		cmds = append(cmds, m.toast.TickCmd())
+
+	case serviceOperationMsg:
+		if msg.err != nil {
+			m.toast.Show(
+				fmt.Sprintf("Failed to %s %s: %v", msg.operation, msg.service, msg.err),
+				ToastError,
+				5*time.Second,
+			)
+		} else {
+			m.toast.Show(
+				fmt.Sprintf("%s %sed", msg.service, msg.operation),
+				ToastSuccess,
+				2*time.Second,
+			)
+		}
+		cmds = append(cmds, m.toast.TickCmd())
+		cmds = append(cmds, m.pollServicesCmd())
+
+	case settingsSavedMsg:
+		m.toast.Show("Settings saved", ToastSuccess, 2*time.Second)
+		// Reload styles if theme changed
+		m.styles = NewStyles(GetTheme(m.config.UI.Theme))
+		cmds = append(cmds, m.toast.TickCmd())
+
+	case settingsSaveErrorMsg:
+		m.toast.Show(fmt.Sprintf("Failed to save settings: %v", msg.err), ToastError, 5*time.Second)
 		cmds = append(cmds, m.toast.TickCmd())
 
 	case ToastTickMsg:
@@ -633,10 +706,11 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.startProjectCmd(p), m.toast.TickCmd())
 			} else if client := m.getOrCreateClient(p); client != nil {
 				// Start all services in running project
+				var cmds []tea.Cmd
 				for _, svc := range m.services {
-					_ = client.StartProcess(svc.Name)
+					cmds = append(cmds, m.startServiceCmd(client, svc.Name))
 				}
-				return m, m.pollServicesCmd()
+				return m, tea.Batch(cmds...)
 			}
 		}
 		return m, nil
@@ -678,31 +752,31 @@ func (m *Model) handleServicesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if p := m.currentProject(); p != nil {
 			if client := m.getOrCreateClient(p); client != nil {
 				if m.selectedService < len(m.services) {
-					_ = client.StartProcess(m.services[m.selectedService].Name)
+					return m, m.startServiceCmd(client, m.services[m.selectedService].Name)
 				}
 			}
 		}
-		return m, m.pollServicesCmd()
+		return m, nil
 	case key.Matches(msg, m.keys.Stop):
 		// x - stop service
 		if p := m.currentProject(); p != nil {
 			if client := m.getOrCreateClient(p); client != nil {
 				if m.selectedService < len(m.services) {
-					_ = client.StopProcess(m.services[m.selectedService].Name)
+					return m, m.stopServiceCmd(client, m.services[m.selectedService].Name)
 				}
 			}
 		}
-		return m, m.pollServicesCmd()
+		return m, nil
 	case key.Matches(msg, m.keys.Restart):
 		// r - restart service
 		if p := m.currentProject(); p != nil {
 			if client := m.getOrCreateClient(p); client != nil {
 				if m.selectedService < len(m.services) {
-					_ = client.RestartProcess(m.services[m.selectedService].Name)
+					return m, m.restartServiceCmd(client, m.services[m.selectedService].Name)
 				}
 			}
 		}
-		return m, m.pollServicesCmd()
+		return m, nil
 	}
 	return m, nil
 }
@@ -848,11 +922,6 @@ func (m *Model) View() string {
 		return m.renderAlertHistory()
 	}
 
-	// Settings overlay
-	if m.showSettings {
-		return m.settings.View()
-	}
-
 	// Main view
 	header := m.renderHeader()
 	body := m.renderBody()
@@ -868,6 +937,21 @@ func (m *Model) View() string {
 			Width(m.width).
 			Align(lipgloss.Center)
 		main = lipgloss.JoinVertical(lipgloss.Left, toastStyle.Render(toast), main)
+	}
+
+	// Settings modal overlay (centered on screen)
+	if m.showSettings {
+		settingsModal := m.settings.View()
+		// Place modal centered on a dark background
+		main = lipgloss.Place(
+			m.width,
+			m.height,
+			lipgloss.Center,
+			lipgloss.Center,
+			settingsModal,
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(lipgloss.Color("#1a1a1a")),
+		)
 	}
 
 	return main
