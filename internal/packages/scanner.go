@@ -8,9 +8,17 @@ import (
 
 // nixStoreRegex parses Nix store path components.
 // Pattern explanation:
-// - ^([a-z0-9]+) - matches the hash at the start
-// - -(.+?) - matches the package name (non-greedy to allow backtracking)
-// - (?:-([0-9]+[0-9.\-a-z]*))? - optionally matches version starting with a digit
+// - ^([a-z0-9]+) - matches the hash at the start (group 1)
+// - -(.+?) - matches the package name, non-greedy to allow backtracking (group 2)
+// - (?:-([0-9]+[0-9.\-a-z]*))? - optionally matches version starting with a digit (group 3)
+//   * Must start with a digit to distinguish from hyphenated package names
+//   * Can contain digits, dots, hyphens, and letters (e.g., "1.21.5", "0.14.0-unstable")
+//   * Optional group allows packages without versions
+//
+// Examples:
+//   - "abc123-go-1.21.5" → hash="abc123", name="go", version="1.21.5"
+//   - "xyz789-gcc-arm-embedded-13.2.1" → hash="xyz789", name="gcc-arm-embedded", version="13.2.1"
+//   - "def456-bash" → hash="def456", name="bash", version=""
 var nixStoreRegex = regexp.MustCompile(`^([a-z0-9]+)-(.+?)(?:-([0-9]+[0-9.\-a-z]*))?$`)
 
 // parseNixStorePath extracts package name, version, and hash from a Nix store path.
@@ -53,60 +61,83 @@ func parseNixStorePath(path string) (string, string, string) {
 }
 
 // categorizePackage determines the package type based on name patterns.
+// Uses exact matches for core tools and explicit checks for known variants
+// to avoid false positives (e.g., "golang" or "google-chrome" shouldn't match "go").
+//
+// Examples:
+//   - categorizePackage("go") → "Go"
+//   - categorizePackage("python3") → "Python"
+//   - categorizePackage("node") → "Node.js"
+//   - categorizePackage("golang") → "Other" (not the Go toolchain)
+//   - categorizePackage("python-dotenv") → "Other" (Python package, not Python itself)
 func categorizePackage(name string) string {
 	lowerName := strings.ToLower(name)
 
-	// Go packages
-	if strings.HasPrefix(lowerName, "go") ||
+	// Go packages - exact match for "go" + known Go toolchain binaries
+	if lowerName == "go" ||
 		lowerName == "gopls" ||
 		lowerName == "gofmt" ||
-		lowerName == "godoc" {
+		lowerName == "godoc" ||
+		lowerName == "goimports" ||
+		lowerName == "golangci-lint" {
 		return "Go"
 	}
 
-	// Python packages
-	if strings.Contains(lowerName, "python") ||
+	// Python packages - exact match for python/python2/python3 + known Python tools
+	if lowerName == "python" ||
+		lowerName == "python2" ||
+		lowerName == "python3" ||
 		lowerName == "pip" ||
+		lowerName == "pip2" ||
+		lowerName == "pip3" ||
 		lowerName == "pytest" ||
-		lowerName == "poetry" {
+		lowerName == "poetry" ||
+		lowerName == "pipenv" {
 		return "Python"
 	}
 
-	// Node.js packages
+	// Node.js packages - exact matches for Node ecosystem tools
 	if lowerName == "node" ||
 		lowerName == "nodejs" ||
 		lowerName == "npm" ||
 		lowerName == "npx" ||
-		lowerName == "yarn" {
+		lowerName == "yarn" ||
+		lowerName == "pnpm" {
 		return "Node.js"
 	}
 
-	// Rust packages
+	// Rust packages - exact matches for Rust toolchain
 	if lowerName == "cargo" ||
 		lowerName == "rustc" ||
-		lowerName == "rustup" {
+		lowerName == "rustup" ||
+		lowerName == "rustfmt" {
 		return "Rust"
 	}
 
-	// C/C++ compilers
+	// C/C++ compilers - exact matches
 	if lowerName == "gcc" ||
 		lowerName == "g++" ||
 		lowerName == "clang" ||
-		lowerName == "clang++" {
+		lowerName == "clang++" ||
+		lowerName == "make" ||
+		lowerName == "cmake" {
 		return "C/C++"
 	}
 
-	// Ruby
+	// Ruby - exact matches
 	if lowerName == "ruby" ||
 		lowerName == "gem" ||
-		lowerName == "bundle" {
+		lowerName == "bundle" ||
+		lowerName == "bundler" ||
+		lowerName == "rake" {
 		return "Ruby"
 	}
 
-	// Java
+	// Java - exact matches
 	if lowerName == "java" ||
 		lowerName == "javac" ||
 		lowerName == "maven" ||
+		lowerName == "mvn" ||
 		lowerName == "gradle" {
 		return "Java"
 	}

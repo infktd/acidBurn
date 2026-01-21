@@ -2,135 +2,7 @@ package packages
 
 import (
 	"testing"
-	"time"
 )
-
-func TestPackageStructure(t *testing.T) {
-	tests := []struct {
-		name    string
-		pkg     Package
-		wantPkg Package
-	}{
-		{
-			name: "Go package",
-			pkg: Package{
-				Name:    "go",
-				Version: "1.21.5",
-				Type:    "Go",
-				Binary:  "/nix/store/abc-go-1.21.5/bin/go",
-			},
-			wantPkg: Package{
-				Name:    "go",
-				Version: "1.21.5",
-				Type:    "Go",
-				Binary:  "/nix/store/abc-go-1.21.5/bin/go",
-			},
-		},
-		{
-			name: "Python package",
-			pkg: Package{
-				Name:    "python3",
-				Version: "3.11.7",
-				Type:    "Python",
-				Binary:  "/usr/bin/python3",
-			},
-			wantPkg: Package{
-				Name:    "python3",
-				Version: "3.11.7",
-				Type:    "Python",
-				Binary:  "/usr/bin/python3",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.pkg.Name != tt.wantPkg.Name {
-				t.Errorf("Name: got %q, want %q", tt.pkg.Name, tt.wantPkg.Name)
-			}
-			if tt.pkg.Version != tt.wantPkg.Version {
-				t.Errorf("Version: got %q, want %q", tt.pkg.Version, tt.wantPkg.Version)
-			}
-			if tt.pkg.Type != tt.wantPkg.Type {
-				t.Errorf("Type: got %q, want %q", tt.pkg.Type, tt.wantPkg.Type)
-			}
-			if tt.pkg.Binary != tt.wantPkg.Binary {
-				t.Errorf("Binary: got %q, want %q", tt.pkg.Binary, tt.wantPkg.Binary)
-			}
-		})
-	}
-}
-
-func TestPackageInfoStructure(t *testing.T) {
-	now := time.Now()
-	tests := []struct {
-		name     string
-		info     PackageInfo
-		wantInfo PackageInfo
-	}{
-		{
-			name: "single package",
-			info: PackageInfo{
-				ProjectPath: "/home/user/project",
-				Packages:    []Package{{Name: "go", Version: "1.21.5", Type: "Go", Binary: "/usr/bin/go"}},
-				LastScanned: now,
-			},
-			wantInfo: PackageInfo{
-				ProjectPath: "/home/user/project",
-				Packages:    []Package{{Name: "go", Version: "1.21.5", Type: "Go", Binary: "/usr/bin/go"}},
-				LastScanned: now,
-			},
-		},
-		{
-			name: "multiple packages",
-			info: PackageInfo{
-				ProjectPath: "/home/user/multi-project",
-				Packages: []Package{
-					{Name: "go", Version: "1.21.5", Type: "Go", Binary: "/usr/bin/go"},
-					{Name: "python3", Version: "3.11.7", Type: "Python", Binary: "/usr/bin/python3"},
-				},
-				LastScanned: now,
-			},
-			wantInfo: PackageInfo{
-				ProjectPath: "/home/user/multi-project",
-				Packages: []Package{
-					{Name: "go", Version: "1.21.5", Type: "Go", Binary: "/usr/bin/go"},
-					{Name: "python3", Version: "3.11.7", Type: "Python", Binary: "/usr/bin/python3"},
-				},
-				LastScanned: now,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.info.ProjectPath != tt.wantInfo.ProjectPath {
-				t.Errorf("ProjectPath: got %q, want %q", tt.info.ProjectPath, tt.wantInfo.ProjectPath)
-			}
-			if len(tt.info.Packages) != len(tt.wantInfo.Packages) {
-				t.Errorf("Packages length: got %d, want %d", len(tt.info.Packages), len(tt.wantInfo.Packages))
-			}
-			for i, pkg := range tt.info.Packages {
-				wantPkg := tt.wantInfo.Packages[i]
-				if pkg.Name != wantPkg.Name {
-					t.Errorf("Package[%d].Name: got %q, want %q", i, pkg.Name, wantPkg.Name)
-				}
-				if pkg.Version != wantPkg.Version {
-					t.Errorf("Package[%d].Version: got %q, want %q", i, pkg.Version, wantPkg.Version)
-				}
-				if pkg.Type != wantPkg.Type {
-					t.Errorf("Package[%d].Type: got %q, want %q", i, pkg.Type, wantPkg.Type)
-				}
-				if pkg.Binary != wantPkg.Binary {
-					t.Errorf("Package[%d].Binary: got %q, want %q", i, pkg.Binary, wantPkg.Binary)
-				}
-			}
-			if !tt.info.LastScanned.Equal(tt.wantInfo.LastScanned) {
-				t.Errorf("LastScanned: got %v, want %v", tt.info.LastScanned, tt.wantInfo.LastScanned)
-			}
-		})
-	}
-}
 
 func TestParseNixStorePath(t *testing.T) {
 	tests := []struct {
@@ -231,6 +103,28 @@ func TestParseNixStorePath(t *testing.T) {
 			expectedVersion: "0.1.2",
 			expectedHash:    "abc123",
 		},
+		// Regex fallback tests (exercises lines 40-45)
+		{
+			name:            "fallback_just_hash_and_name",
+			path:            "/nix/store/abc123-tool/bin/tool",
+			expectedPkg:     "tool",
+			expectedVersion: "",
+			expectedHash:    "abc123",
+		},
+		{
+			name:            "fallback_special_chars_in_name",
+			path:            "/nix/store/xyz789-my_special.tool/bin/tool",
+			expectedPkg:     "my_special.tool",
+			expectedVersion: "",
+			expectedHash:    "xyz789",
+		},
+		{
+			name:            "fallback_version_like_but_not_version",
+			path:            "/nix/store/abc-tool-v2/bin/tool",
+			expectedPkg:     "tool-v2",
+			expectedVersion: "",
+			expectedHash:    "abc",
+		},
 	}
 
 	for _, tt := range tests {
@@ -255,28 +149,95 @@ func TestCategorizePackage(t *testing.T) {
 		packageName  string
 		expectedType string
 	}{
-		{"go", "go", "Go"},
+		// Go toolchain
+		{"go_lowercase", "go", "Go"},
+		{"go_uppercase", "GO", "Go"},
+		{"go_mixedcase", "Go", "Go"},
 		{"gofmt", "gofmt", "Go"},
 		{"gopls", "gopls", "Go"},
-		{"python3", "python3", "Python"},
+		{"godoc", "godoc", "Go"},
+		{"goimports", "goimports", "Go"},
+		{"golangci_lint", "golangci-lint", "Go"},
+
+		// Go false positives (should be Other)
+		{"golang_not_go_toolchain", "golang", "Other"},
+		{"go_tools_prefix", "go-tools", "Other"},
+		{"google_chrome_prefix", "google-chrome", "Other"},
+		{"gopher_prefix", "gopher", "Other"},
+
+		// Python toolchain
 		{"python", "python", "Python"},
+		{"python2", "python2", "Python"},
+		{"python3", "python3", "Python"},
+		{"python3_uppercase", "PYTHON3", "Python"},
 		{"pip", "pip", "Python"},
+		{"pip2", "pip2", "Python"},
+		{"pip3", "pip3", "Python"},
 		{"pytest", "pytest", "Python"},
+		{"poetry", "poetry", "Python"},
+		{"pipenv", "pipenv", "Python"},
+
+		// Python false positives (should be Other)
+		{"python_dotenv_package", "python-dotenv", "Other"},
+		{"python_requests_package", "python-requests", "Other"},
+		{"pythonista", "pythonista", "Other"},
+
+		// Node.js toolchain
 		{"node", "node", "Node.js"},
-		{"npm", "npm", "Node.js"},
 		{"nodejs", "nodejs", "Node.js"},
+		{"node_uppercase", "NODE", "Node.js"},
+		{"npm", "npm", "Node.js"},
+		{"npx", "npx", "Node.js"},
+		{"yarn", "yarn", "Node.js"},
+		{"pnpm", "pnpm", "Node.js"},
+
+		// Node.js false positives (should be Other)
+		{"node_fetch_package", "node-fetch", "Other"},
+		{"node_sass_package", "node-sass", "Other"},
+		{"nodemon", "nodemon", "Other"},
+
+		// Rust toolchain
 		{"cargo", "cargo", "Rust"},
 		{"rustc", "rustc", "Rust"},
+		{"rustup", "rustup", "Rust"},
+		{"rustfmt", "rustfmt", "Rust"},
+
+		// C/C++ toolchain
 		{"gcc", "gcc", "C/C++"},
+		{"g++", "g++", "C/C++"},
 		{"clang", "clang", "C/C++"},
-		{"unknown", "foobar", "Other"},
+		{"clang++", "clang++", "C/C++"},
+		{"make", "make", "C/C++"},
+		{"cmake", "cmake", "C/C++"},
+
+		// Ruby toolchain
+		{"ruby", "ruby", "Ruby"},
+		{"gem", "gem", "Ruby"},
+		{"bundle", "bundle", "Ruby"},
+		{"bundler", "bundler", "Ruby"},
+		{"rake", "rake", "Ruby"},
+
+		// Java toolchain
+		{"java", "java", "Java"},
+		{"javac", "javac", "Java"},
+		{"maven", "maven", "Java"},
+		{"mvn", "mvn", "Java"},
+		{"gradle", "gradle", "Java"},
+
+		// Other/Unknown packages
+		{"unknown_package", "foobar", "Other"},
+		{"bash", "bash", "Other"},
+		{"zsh", "zsh", "Other"},
+		{"git", "git", "Other"},
+		{"docker", "docker", "Other"},
+		{"kubectl", "kubectl", "Other"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			typ := categorizePackage(tt.packageName)
 			if typ != tt.expectedType {
-				t.Errorf("expected type %q for %q, got %q", tt.expectedType, tt.packageName, typ)
+				t.Errorf("categorizePackage(%q) = %q, want %q", tt.packageName, typ, tt.expectedType)
 			}
 		})
 	}
