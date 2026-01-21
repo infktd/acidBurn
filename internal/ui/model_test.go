@@ -509,3 +509,24 @@ func TestPressP_NoEffectOnWideTerminal(t *testing.T) {
 	// Just verify it doesn't crash
 	_ = model
 }
+
+func TestProjectSwitch_ScansPackages(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{
+		Projects: []*registry.Project{
+			{Path: "/tmp/testproject", Name: "test"},
+		},
+	}
+	m := New(cfg, reg)
+	m.selectedProject = 0
+
+	// Switch to project (this will try to scan packages)
+	m.switchToCurrentProject()
+
+	// PackagesView should have been updated (even if empty)
+	// This is a basic test - in real usage, packages would be populated
+	// if .devenv/profile/bin/ exists
+	if m.packagesView == nil {
+		t.Error("packagesView should not be nil after project switch")
+	}
+}

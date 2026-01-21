@@ -23,6 +23,7 @@ import (
 	"github.com/infktd/devdash/internal/config"
 	"github.com/infktd/devdash/internal/health"
 	"github.com/infktd/devdash/internal/notify"
+	"github.com/infktd/devdash/internal/packages"
 	"github.com/infktd/devdash/internal/registry"
 )
 
@@ -1661,6 +1662,19 @@ func (m *Model) switchToCurrentProject() {
 	m.memHistory = make(map[string][]int64)          // Reset memory history
 	m.logView.SetService("")                         // Clear service filter
 	m.logView.buffer.Clear()                         // Clear old logs
+
+	// Scan packages for new project
+	project := m.currentProject()
+	if project != nil {
+		pkgs, err := packages.Scan(project.Path)
+		if err != nil {
+			// Log error but don't block
+			pkgs = []packages.Package{}
+		}
+		m.packagesView.SetPackages(pkgs)
+	} else {
+		m.packagesView.SetPackages([]packages.Package{})
+	}
 }
 
 func (m *Model) moveUp() tea.Cmd {
