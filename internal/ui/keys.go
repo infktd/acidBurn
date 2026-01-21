@@ -16,11 +16,12 @@ type KeyMap struct {
 	// Navigation
 	Up     key.Binding
 	Down   key.Binding
-	Left   key.Binding
-	Right  key.Binding
-	Tab    key.Binding
-	Select key.Binding
-	Back   key.Binding
+	Left     key.Binding
+	Right    key.Binding
+	Tab      key.Binding
+	ShiftTab key.Binding
+	Select   key.Binding
+	Back     key.Binding
 
 	// Actions
 	Start   key.Binding
@@ -98,7 +99,11 @@ func DefaultKeyMap() KeyMap {
 		),
 		Tab: key.NewBinding(
 			key.WithKeys("tab"),
-			key.WithHelp("tab", "switch pane"),
+			key.WithHelp("tab", "next pane"),
+		),
+		ShiftTab: key.NewBinding(
+			key.WithKeys("shift+tab"),
+			key.WithHelp("shift+tab", "prev pane"),
 		),
 		Select: key.NewBinding(
 			key.WithKeys("enter"),
