@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -528,5 +529,24 @@ func TestProjectSwitch_ScansPackages(t *testing.T) {
 	// if .devenv/profile/bin/ exists
 	if m.packagesView == nil {
 		t.Error("packagesView should not be nil after project switch")
+	}
+}
+
+func TestView_WideTerminal_ShowsBothPanes(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 150
+	m.height = 40
+	m.showSplash = false
+
+	view := m.View()
+
+	// Both "SERVICES" and "PACKAGES" should appear in view
+	if !strings.Contains(view, "SERVICES") {
+		t.Error("wide terminal view should contain SERVICES")
+	}
+	if !strings.Contains(view, "PACKAGES") {
+		t.Error("wide terminal view should contain PACKAGES")
 	}
 }

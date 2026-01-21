@@ -33,6 +33,7 @@ type FocusedPane int
 const (
 	PaneSidebar FocusedPane = iota
 	PaneServices
+	PanePackages
 	PaneLogs
 )
 
@@ -1642,11 +1643,45 @@ func (m *Model) listIndexToProjectIndex(listIndex int) int {
 }
 
 func (m *Model) cycleFocus() {
-	m.focused = (m.focused + 1) % 3
+	switch m.focused {
+	case PaneSidebar:
+		m.focused = PaneServices
+	case PaneServices:
+		// If both panes visible, go to packages next
+		// Otherwise skip to logs
+		if m.shouldShowBothPanes() {
+			m.focused = PanePackages
+		} else {
+			m.focused = PaneLogs
+		}
+	case PanePackages:
+		m.focused = PaneLogs
+	case PaneLogs:
+		m.focused = PaneSidebar
+	default:
+		m.focused = PaneSidebar
+	}
 }
 
 func (m *Model) cycleFocusReverse() {
-	m.focused = (m.focused + 2) % 3 // +2 is same as -1 mod 3
+	switch m.focused {
+	case PaneSidebar:
+		m.focused = PaneLogs
+	case PaneServices:
+		m.focused = PaneSidebar
+	case PanePackages:
+		m.focused = PaneServices
+	case PaneLogs:
+		// If both panes visible, go to packages previous
+		// Otherwise skip to services
+		if m.shouldShowBothPanes() {
+			m.focused = PanePackages
+		} else {
+			m.focused = PaneServices
+		}
+	default:
+		m.focused = PaneSidebar
+	}
 }
 
 // switchToCurrentProject updates the services display for the currently selected project
@@ -1986,13 +2021,34 @@ func (m *Model) renderProjectItem(idx int, p *registry.Project) string {
 }
 
 func (m *Model) renderMain(width, height int) string {
-	servicesHeight := height / 3
-	logsHeight := height - servicesHeight - 2
+	// Determine layout based on width
+	if m.shouldShowBothPanes() {
+		// Wide terminal: show Services, Packages, and Logs stacked vertically
+		servicesHeight := height / 4
+		packagesHeight := height / 4
+		logsHeight := height - servicesHeight - packagesHeight - 4
 
-	services := m.renderServices(width, servicesHeight)
-	logs := m.renderLogs(width, logsHeight)
+		services := m.renderServices(width, servicesHeight)
+		packages := m.renderPackages(width, packagesHeight)
+		logs := m.renderLogs(width, logsHeight)
 
-	return lipgloss.JoinVertical(lipgloss.Left, services, logs)
+		return lipgloss.JoinVertical(lipgloss.Left, services, packages, logs)
+	} else {
+		// Narrow terminal: show either Services or Packages, plus Logs
+		mainPaneHeight := height / 3
+		logsHeight := height - mainPaneHeight - 2
+
+		var mainPane string
+		if m.showPackages {
+			mainPane = m.renderPackages(width, mainPaneHeight)
+		} else {
+			mainPane = m.renderServices(width, mainPaneHeight)
+		}
+
+		logs := m.renderLogs(width, logsHeight)
+
+		return lipgloss.JoinVertical(lipgloss.Left, mainPane, logs)
+	}
 }
 
 func (m *Model) renderServices(width, height int) string {
@@ -2053,6 +2109,23 @@ func (m *Model) renderServices(width, height int) string {
 	}
 
 	return style.Width(width).Height(height).Render(content)
+}
+
+func (m *Model) renderPackages(width, height int) string {
+	// Update packagesView size and focus state
+	m.packagesView.SetSize(width-4, height-4)
+	m.packagesView.SetFocused(m.focused == PanePackages)
+
+	// Get packages view content
+	packagesContent := m.packagesView.View()
+
+	// Wrap in border
+	style := m.styles.BlurredBorder
+	if m.focused == PanePackages {
+		style = m.styles.FocusedBorder
+	}
+
+	return style.Width(width).Height(height).Render(packagesContent)
 }
 
 func (m *Model) renderLogs(width, height int) string {
