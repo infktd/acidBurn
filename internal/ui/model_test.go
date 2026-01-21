@@ -449,3 +449,27 @@ func TestShouldShowBothPanes(t *testing.T) {
 		t.Error("expected true for width 200")
 	}
 }
+
+func TestTogglePackagesView(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 100 // Narrow terminal
+
+	// Default should show services (showPackages = false)
+	if m.showPackages {
+		t.Error("expected showPackages to be false by default")
+	}
+
+	// Toggle to packages
+	m.togglePackagesView()
+	if !m.showPackages {
+		t.Error("expected showPackages to be true after toggle")
+	}
+
+	// Toggle back to services
+	m.togglePackagesView()
+	if m.showPackages {
+		t.Error("expected showPackages to be false after second toggle")
+	}
+}
