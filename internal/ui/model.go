@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -48,7 +49,6 @@ type Model struct {
 	// Overlay state
 	showHelp     bool
 	showSettings bool
-	showAlerts   bool
 	showSplash   bool
 
 	// Search state (for logs)
@@ -60,13 +60,16 @@ type Model struct {
 	projectSearchInput string
 
 	// Components
-	logView   *LogView
-	toast     *ToastManager
-	alerts    *AlertHistory
-	settings  *SettingsPanel
-	splash    *SplashScreen
-	health    *health.Monitor
-	notifier  *notify.Notifier
+	logView     *LogView
+	toast       *ToastManager
+	alerts      *AlertHistory
+	alertsPanel *AlertsPanel
+	settings    *SettingsPanel
+	helpPanel   *HelpPanel
+	splash      *SplashScreen
+	confirm     *ConfirmDialog
+	health      *health.Monitor
+	notifier    *notify.Notifier
 
 	// Compose clients per project (keyed by project path)
 	clients map[string]*compose.Client
@@ -109,11 +112,28 @@ type serviceOperationMsg struct {
 	operation string // "start", "stop", "restart"
 	err       error
 }
+type projectDeletedMsg struct {
+	project string
+}
+type projectHiddenMsg struct {
+	project string
+	hidden  bool
+}
+type projectRepairedMsg struct {
+	project string
+	err     error
+}
+type configEditedMsg struct {
+	config *config.Config
+	err    error
+}
 
 // New creates a new acidBurn model.
 func New(cfg *config.Config, reg *registry.Registry) *Model {
 	theme := GetTheme(cfg.UI.Theme)
 	styles := NewStyles(theme)
+
+	alertHistory := NewAlertHistory(100)
 
 	m := &Model{
 		config:   cfg,
@@ -123,11 +143,14 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 		focused:  PaneSidebar,
 
 		// Initialize components
-		logView:  NewLogView(styles, 80, 20),
-		toast:    NewToastManager(styles, 60),
-		alerts:   NewAlertHistory(100),
-		settings: NewSettingsPanel(cfg, styles, 80, 24),
-		splash:   NewSplashScreen(styles, 80, 24),
+		logView:     NewLogView(styles, 80, 20),
+		toast:       NewToastManager(styles, 60),
+		alerts:      alertHistory,
+		alertsPanel: NewAlertsPanel(styles, alertHistory, 80, 24),
+		settings:    NewSettingsPanel(cfg, styles, 80, 24),
+		helpPanel:   NewHelpPanel(styles, 80, 24),
+		splash:      NewSplashScreen(styles, 80, 24),
+		confirm:     NewConfirmDialog(styles),
 		health:       health.NewMonitor(2 * time.Second),
 		notifier:     notify.NewNotifier(cfg.Notifications.SystemEnabled),
 		clients:      make(map[string]*compose.Client),
@@ -138,7 +161,7 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 	// Show splash on startup
 	m.showSplash = true
 	m.splash.SetMessage("Starting acidBurn...")
-	m.splash.SetProgress(0.5)
+	m.splash.SetProgress(0.0)
 
 	// Initialize displayed projects
 	m.updateDisplayedProjects()
@@ -151,18 +174,22 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.tickCmd(),
 		m.pollServicesCmd(),
-		// Hide splash after a short delay
-		tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
-			return splashDoneMsg{}
-		}),
+		m.splashTickCmd(),
 	)
 }
 
 type splashDoneMsg struct{}
+type splashTickMsg struct{}
 
 func (m *Model) tickCmd() tea.Cmd {
 	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)
+	})
+}
+
+func (m *Model) splashTickCmd() tea.Cmd {
+	return tea.Tick(50*time.Millisecond, func(t time.Time) tea.Msg {
+		return splashTickMsg{}
 	})
 }
 
@@ -288,6 +315,35 @@ func (m *Model) stopProjectCmd(p *registry.Project) tea.Cmd {
 	}
 }
 
+// editConfigCmd opens the config file in $EDITOR
+func (m *Model) editConfigCmd() tea.Cmd {
+	// Get editor from environment, default to vi
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+
+	// Get config path
+	configPath := config.Path()
+
+	// Use tea.ExecProcess to suspend TUI and run editor
+	c := exec.Command(editor, configPath)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		if err != nil {
+			return configEditedMsg{config: nil, err: err}
+		}
+
+		// Reload config after editing
+		newConfig, loadErr := config.Load(configPath)
+		if loadErr != nil {
+			return configEditedMsg{config: nil, err: fmt.Errorf("failed to reload config: %v", loadErr)}
+		}
+
+		// Return the new config in the message
+		return configEditedMsg{config: newConfig, err: nil}
+	})
+}
+
 // Update handles messages and updates the model.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -305,6 +361,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// Confirm dialog - delegate to confirm dialog
+	if m.confirm.IsVisible() {
+		var cmd tea.Cmd
+		m.confirm, cmd = m.confirm.Update(msg)
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKeyPress(msg)
@@ -315,7 +378,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logView.SetSize(m.width-m.config.UI.SidebarWidth-8, m.height/2)
 		m.splash.SetSize(m.width, m.height)
 		m.settings.SetSize(m.width, m.height)
+		m.helpPanel.SetSize(m.width, m.height)
+		m.alertsPanel.SetSize(m.width, m.height)
 		m.toast = NewToastManager(m.styles, m.width-10)
+
+	case splashTickMsg:
+		if m.showSplash {
+			// Increment progress by ~10% each tick (50ms intervals = ~500ms total)
+			newProgress := m.splash.Progress() + 0.1
+			m.splash.SetProgress(newProgress)
+
+			if newProgress >= 1.0 {
+				// Hide splash when complete
+				m.showSplash = false
+				m.splash.Hide()
+			} else {
+				// Continue ticking
+				cmds = append(cmds, m.splashTickCmd())
+			}
+		}
 
 	case splashDoneMsg:
 		m.showSplash = false
@@ -498,6 +579,43 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.toast.Show(fmt.Sprintf("Failed to save settings: %v", msg.err), ToastError, 5*time.Second)
 		cmds = append(cmds, m.toast.TickCmd())
 
+	case projectDeletedMsg:
+		m.toast.Show(fmt.Sprintf("%s removed from registry", msg.project), ToastSuccess, 2*time.Second)
+		m.updateDisplayedProjects()
+		cmds = append(cmds, m.toast.TickCmd())
+
+	case projectHiddenMsg:
+		if msg.hidden {
+			m.toast.Show(fmt.Sprintf("%s hidden", msg.project), ToastInfo, 2*time.Second)
+		} else {
+			m.toast.Show(fmt.Sprintf("%s shown", msg.project), ToastInfo, 2*time.Second)
+		}
+		m.updateDisplayedProjects()
+		cmds = append(cmds, m.toast.TickCmd())
+
+	case projectRepairedMsg:
+		if msg.err != nil {
+			m.toast.Show(fmt.Sprintf("Failed to repair %s: %v", msg.project, msg.err), ToastError, 5*time.Second)
+		} else {
+			m.toast.Show(fmt.Sprintf("%s repaired - ready to start", msg.project), ToastSuccess, 3*time.Second)
+		}
+		m.updateDisplayedProjects()
+		cmds = append(cmds, m.toast.TickCmd())
+
+	case configEditedMsg:
+		if msg.err != nil {
+			m.toast.Show(fmt.Sprintf("Failed to edit config: %v", msg.err), ToastError, 5*time.Second)
+		} else {
+			// Update config in model
+			m.config = msg.config
+			// Reload styles with new theme
+			m.styles = NewStyles(GetTheme(m.config.UI.Theme))
+			// Update settings panel with new config
+			m.settings = NewSettingsPanel(m.config, m.styles, m.width, m.height)
+			m.toast.Show("Config reloaded", ToastSuccess, 2*time.Second)
+		}
+		cmds = append(cmds, m.toast.TickCmd())
+
 	case ToastTickMsg:
 		var cmd tea.Cmd
 		m.toast, cmd = m.toast.Update(msg)
@@ -556,20 +674,23 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Help mode - Esc or ? closes
+	// Help mode - delegate to help panel
 	if m.showHelp {
-		if key.Matches(msg, m.keys.Back) || key.Matches(msg, m.keys.Help) {
+		var cmd tea.Cmd
+		m.helpPanel, cmd = m.helpPanel.Update(msg)
+
+		// Check if modal was closed
+		if !m.helpPanel.IsVisible() {
 			m.showHelp = false
 		}
-		return m, nil
+
+		return m, cmd
 	}
 
-	// Alert history mode - Esc closes
-	if m.showAlerts {
-		if key.Matches(msg, m.keys.Back) {
-			m.showAlerts = false
-		}
-		return m, nil
+	// Alerts modal - delegate to panel
+	if m.alertsPanel.IsVisible() {
+		_, cmd := m.alertsPanel.Update(msg)
+		return m, cmd
 	}
 
 	// Project search input mode (sidebar)
@@ -634,6 +755,7 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Help):
+		m.helpPanel.Show()
 		m.showHelp = true
 		return m, nil
 	case key.Matches(msg, m.keys.Tab):
@@ -643,8 +765,14 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd := m.settings.Show()
 		m.showSettings = true
 		return m, cmd
+	case key.Matches(msg, m.keys.EditConfig):
+		return m, m.editConfigCmd()
 	case key.Matches(msg, m.keys.History):
-		m.showAlerts = !m.showAlerts
+		if m.alertsPanel.IsVisible() {
+			m.alertsPanel.Hide()
+		} else {
+			m.alertsPanel.Show()
+		}
 		return m, nil
 	case key.Matches(msg, m.keys.Back):
 		return m, nil
@@ -721,6 +849,66 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if state == registry.StateRunning || state == registry.StateDegraded {
 				m.toast.Show(fmt.Sprintf("Stopping %s...", p.Name), ToastInfo, 3*time.Second)
 				return m, tea.Batch(m.stopProjectCmd(p), m.toast.TickCmd())
+			}
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Delete):
+		// d - delete project (with confirmation)
+		if p := m.currentProject(); p != nil {
+			projectPath := p.Path
+			projectName := p.Name
+			m.confirm.Show(
+				fmt.Sprintf("Remove %s from registry?", projectName),
+				func() tea.Msg {
+					// Delete the project
+					if m.registry.RemoveProject(projectPath) {
+						// Save registry
+						regPath := registry.Path()
+						_ = registry.Save(regPath, m.registry)
+						return projectDeletedMsg{project: projectName}
+					}
+					return nil
+				},
+				func() tea.Msg {
+					// Cancel - do nothing
+					return nil
+				},
+			)
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Hide):
+		// ctrl+h - toggle hidden
+		if p := m.currentProject(); p != nil {
+			projectPath := p.Path
+			projectName := p.Name
+			if m.registry.ToggleHidden(projectPath) {
+				// Save registry
+				regPath := registry.Path()
+				_ = registry.Save(regPath, m.registry)
+				return m, func() tea.Msg {
+					return projectHiddenMsg{project: projectName, hidden: p.Hidden}
+				}
+			}
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Repair):
+		// c - repair stale project
+		if p := m.currentProject(); p != nil {
+			state := p.DetectState()
+			if state == registry.StateStale {
+				projectName := p.Name
+				m.confirm.Show(
+					fmt.Sprintf("Clean up stale files for %s?", projectName),
+					func() tea.Msg {
+						// Repair the project
+						err := p.Repair()
+						return projectRepairedMsg{project: projectName, err: err}
+					},
+					func() tea.Msg {
+						// Cancel - do nothing
+						return nil
+					},
+				)
 			}
 		}
 		return m, nil
@@ -912,16 +1100,6 @@ func (m *Model) View() string {
 		return m.splash.View()
 	}
 
-	// Help overlay
-	if m.showHelp {
-		return m.renderHelp()
-	}
-
-	// Alert history overlay
-	if m.showAlerts {
-		return m.renderAlertHistory()
-	}
-
 	// Main view
 	header := m.renderHeader()
 	body := m.renderBody()
@@ -951,6 +1129,49 @@ func (m *Model) View() string {
 			settingsModal,
 			lipgloss.WithWhitespaceChars(" "),
 			lipgloss.WithWhitespaceForeground(lipgloss.Color("#1a1a1a")),
+		)
+	}
+
+	// Help modal overlay (centered on screen)
+	if m.showHelp {
+		helpModal := m.helpPanel.View()
+		// Place modal centered on a dark background
+		main = lipgloss.Place(
+			m.width,
+			m.height,
+			lipgloss.Center,
+			lipgloss.Center,
+			helpModal,
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(lipgloss.Color("#1a1a1a")),
+		)
+	}
+
+	// Alerts modal overlay (centered on screen)
+	if m.alertsPanel.IsVisible() {
+		alertsModal := m.alertsPanel.View()
+		// Place modal centered on a dark background
+		main = lipgloss.Place(
+			m.width,
+			m.height,
+			lipgloss.Center,
+			lipgloss.Center,
+			alertsModal,
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(lipgloss.Color("#1a1a1a")),
+		)
+	}
+
+	// Confirm dialog overlay (centered, transparent background)
+	if m.confirm.IsVisible() {
+		confirmModal := m.confirm.View()
+		// Place modal centered - background shows through
+		main = lipgloss.Place(
+			m.width,
+			m.height,
+			lipgloss.Center,
+			lipgloss.Center,
+			confirmModal,
 		)
 	}
 
@@ -1085,17 +1306,33 @@ func (m *Model) renderProjectItem(idx int, p *registry.Project) string {
 	}
 
 	name := p.Name
+
+	// Add hidden icon if project is hidden
+	if p.Hidden {
+		name = name + " ■"
+	}
+
 	cursor := "  " // No cursor
 	if idx == m.selectedProject {
 		cursor = "> " // Selection cursor
 		if m.focused == PaneSidebar {
-			name = m.styles.SelectedItem.Render(name)
+			if p.Hidden {
+				// Hidden project selected - dimmed even when focused
+				name = m.styles.Breadcrumb.Render(name)
+			} else {
+				name = m.styles.SelectedItem.Render(name)
+			}
 		} else {
 			// Dimmed selection when not focused
 			name = m.styles.Breadcrumb.Render(name)
 		}
 	} else {
-		name = m.styles.ProjectItem.Render(name)
+		if p.Hidden {
+			// Hidden project not selected - extra dimmed
+			name = m.styles.Breadcrumb.Render(name)
+		} else {
+			name = m.styles.ProjectItem.Render(name)
+		}
 	}
 
 	return fmt.Sprintf("%s%s %s", cursor, glyph, name)
@@ -1251,6 +1488,35 @@ func (m *Model) renderLogs(width, height int) string {
 	return style.Width(width).Height(height).Render(content)
 }
 
+// highlightKeys highlights keybinds in brackets with theme colors
+func (m *Model) highlightKeys(text string) string {
+	// Simple approach: highlight text within brackets
+	result := ""
+	inBracket := false
+	bracketContent := ""
+
+	for _, ch := range text {
+		if ch == '[' {
+			inBracket = true
+			bracketContent = ""
+			result += lipgloss.NewStyle().Foreground(m.styles.theme.Muted).Render("[")
+		} else if ch == ']' {
+			inBracket = false
+			result += lipgloss.NewStyle().
+				Foreground(m.styles.theme.Primary).
+				Bold(true).
+				Render(bracketContent)
+			result += lipgloss.NewStyle().Foreground(m.styles.theme.Muted).Render("]")
+		} else if inBracket {
+			bracketContent += string(ch)
+		} else {
+			result += string(ch)
+		}
+	}
+
+	return result
+}
+
 func (m *Model) renderFooter() string {
 	var help string
 	switch m.focused {
@@ -1260,7 +1526,17 @@ func (m *Model) renderFooter() string {
 		} else if m.projectSearchInput != "" {
 			help = "[/] Edit search  [Esc] Clear  [Enter] Select  [?] Help"
 		} else {
-			help = "[↑/↓] Navigate  [/] Search  [Enter] Select  [s] Start  [x] Stop  [?] Help"
+			// Check if current project is stale to show repair option
+			isStale := false
+			if p := m.currentProject(); p != nil {
+				state := p.DetectState()
+				isStale = (state == registry.StateStale)
+			}
+			if isStale {
+				help = "[↑/↓] Navigate  [c] Repair  [d] Delete  [Ctrl+h] Hide  [?] Help"
+			} else {
+				help = "[↑/↓] Navigate  [/] Search  [Enter] Select  [s] Start  [x] Stop  [d] Delete  [Ctrl+h] Hide  [?] Help"
+			}
 		}
 	case PaneServices:
 		help = "[↑/↓] Navigate  [Enter] Filter  [s] Start  [x] Stop  [r] Restart  [?] Help"
@@ -1273,66 +1549,10 @@ func (m *Model) renderFooter() string {
 			help = "[↑/↓] Scroll  [f] Follow  [/] Search  [g/G] Top/Bottom  [?] Help"
 		}
 	}
-	return m.styles.Footer.Width(m.width).Render(help)
-}
 
-func (m *Model) renderHelp() string {
-	help := `
-KEYBINDINGS
-
-  GLOBAL                     NAVIGATION
-  q       Quit (detach)      ↑/k     Up
-  Ctrl+X  Shutdown all       ↓/j     Down
-  S       Settings           Tab     Switch pane
-  H       Alert history      Enter   Select/Confirm
-  ?       This help          Esc     Back/Cancel
-
-  SIDEBAR                    SERVICES
-  s       Start project      s       Start service
-  x       Stop project       x       Stop service
-                             r       Restart service
-
-  LOGS
-  f       Toggle follow      g/G     Top/Bottom
-  ↑/↓     Scroll
-
-  SEARCH (in Logs)
-  /       Start search       Ctrl+f  Filter mode
-  n       Next match         N       Prev match
-  Esc     Clear search
-
-                                        [Esc] Close
-`
-	return m.styles.Main.Width(m.width).Height(m.height).Render(help)
-}
-
-func (m *Model) renderAlertHistory() string {
-	var content string
-	content += m.styles.Title.Render("ALERT HISTORY") + "\n\n"
-
-	alerts := m.alerts.Recent(20)
-	if len(alerts) == 0 {
-		content += m.styles.Breadcrumb.Render("No alerts yet")
-	} else {
-		for _, a := range alerts {
-			ts := a.Timestamp.Format("15:04:05")
-			var icon string
-			switch a.Type {
-			case AlertServiceCrashed:
-				icon = m.styles.StatusStale.Render("✗")
-			case AlertServiceRecovered:
-				icon = m.styles.StatusRunning.Render("●")
-			default:
-				icon = m.styles.StatusIdle.Render("○")
-			}
-			line := fmt.Sprintf("%s %s [%s] %s: %s", ts, icon, a.Project, a.Service, a.Message)
-			content += line + "\n"
-		}
-	}
-
-	content += "\n" + m.styles.Breadcrumb.Render("[Esc] Close")
-
-	return m.styles.Main.Width(m.width).Height(m.height).Render(content)
+	// Highlight the keybinds
+	highlightedHelp := m.highlightKeys(help)
+	return lipgloss.NewStyle().Width(m.width).Render(highlightedHelp)
 }
 
 // formatBytes converts bytes to human-readable format (KB, MB, GB).

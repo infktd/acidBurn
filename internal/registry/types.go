@@ -136,3 +136,15 @@ func (p *Project) checkServiceStates() ProjectState {
 	// No processes running but socket exists
 	return StateStale
 }
+
+// Repair cleans up stale socket files and symlinks.
+func (p *Project) Repair() error {
+	runDir := filepath.Join(p.Path, ".devenv", "run")
+
+	// Remove the entire run directory (contains socket and symlink)
+	if err := os.RemoveAll(runDir); err != nil {
+		return err
+	}
+
+	return nil
+}

@@ -153,8 +153,15 @@ func (sp *SettingsPanel) buildFields() {
 			Type:  FieldSelect,
 			Options: []SelectOption{
 				{Label: "Acid Green", Value: "acid-green"},
-				{Label: "Nord", Value: "nord"},
-				{Label: "Dracula", Value: "dracula"},
+				{Label: "Catppuccin Mocha", Value: "catppuccin-mocha"},
+				{Label: "Catppuccin Macchiato", Value: "catppuccin-macchiato"},
+				{Label: "Catppuccin Frappé", Value: "catppuccin-frappe"},
+				{Label: "Catppuccin Latte (Light)", Value: "catppuccin-latte"},
+				{Label: "Tokyo Night", Value: "tokyo-night"},
+				{Label: "Tokyo Storm", Value: "tokyo-storm"},
+				{Label: "Tokyo Day (Light)", Value: "tokyo-day"},
+				{Label: "Gruvbox Dark", Value: "gruvbox-dark"},
+				{Label: "Gruvbox Light", Value: "gruvbox-light"},
 			},
 			GetValue: func() interface{} {
 				return sp.workingCopy.theme

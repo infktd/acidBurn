@@ -193,7 +193,13 @@ func (s *SplashScreen) renderProgressBar() string {
 	bar := strings.Repeat(filledChar, filled) + strings.Repeat(emptyChar, empty)
 	percent := fmt.Sprintf("%3.0f%%", s.progress*100)
 
-	barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00"))
+	// Use theme primary color for progress bar
+	barColor := lipgloss.Color("#00FF00") // Default
+	if s.styles != nil {
+		barColor = s.styles.theme.Primary
+	}
+
+	barStyle := lipgloss.NewStyle().Foreground(barColor)
 	percentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
 
 	return barStyle.Render(bar) + " " + percentStyle.Render(percent)
