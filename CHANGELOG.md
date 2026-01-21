@@ -4,6 +4,63 @@ All notable changes to acidBurn will be documented in this file.
 
 This project uses [0ver](https://0ver.org/) versioning.
 
+## [0.1.2] - 2026-01-21
+
+### Added
+- Spinner animations for project start/stop/restart operations
+- Loading indicators for project state transitions
+- Section title styling with `// TITLE ─────────────────` format
+- Custom project filter with full theme integration (press `/` to activate)
+  - Theme-colored "Filter:" prompt and input text
+  - Blinking cursor during input mode
+  - Case-insensitive substring search
+  - Esc to clear, Enter to apply
+- Five new themes: Dracula, Nord, Ayu Dark, Solarized Dark, Monokai
+- ACTIVE/IDLE section headers in project list
+
+### Changed
+- Sidebar now uses bubbles/list component with built-in fuzzy search
+- Services pane now uses bubbles/table component for cleaner, aligned columns
+- Section titles styled with code comment format (`// TITLE ───────`)
+- Section title colors dynamically change based on pane focus (primary when focused, muted when not)
+- Modal borders changed to rounded style for softer appearance
+- Projects visually grouped under ACTIVE and IDLE section headers
+- Project items indented under section headers for clear hierarchy
+- Removed all light themes, Catppuccin variants, and Oxocarbon
+- Curated theme selection of 8 distinct dark themes: Acid Green, Gruvbox, Dracula, Nord, Tokyo Night, Ayu Dark, Solarized Dark, Monokai
+
+### Fixed
+- Custom project filter now uses theme colors (primary color for "Filter:" text and input)
+- Filter mode now captures ALL keys (prevents keybinds like 's', 'x' from triggering while typing)
+- Filter prompt "Filter:" text and cursor now properly styled with theme primary color
+- Theme colors now update immediately when changed (no restart required)
+- Esc key properly exits and clears filter mode
+- Enter key applies filter and exits input mode (filter remains active)
+- Removed "2items" counter by disabling status bar (was counting section headers as items)
+
+### Technical
+- Integrated `bubbles/spinner` for loading state animations
+- Integrated `bubbles/table` for services display with proper column alignment
+- Integrated `bubbles/list` for sidebar with built-in fuzzy search filtering
+- Added custom `projectDelegate` implementing `list.ItemDelegate` for project rendering
+- Added `sectionHeaderItem` type for ACTIVE/IDLE headers
+- Section headers skip navigation (cursor jumps over them)
+- Added `projectIndexToListIndex()` and `listIndexToProjectIndex()` for header-aware indexing
+- Removed custom project search implementation (replaced by list's built-in search)
+- Added `renderSectionTitle()` function for consistent section header styling with theme awareness
+- Added `loadingOp` and `loadingProject` fields to Model for spinner state tracking
+- Spinner displays in place of status glyph during project operations
+- List component now receives messages for filter handling via `projectsList.Update(msg)`
+- Implemented custom project filter UI (replaced bubbles/list built-in filter for full style control)
+- Added `projectFilterMode` and `projectFilterInput` fields to Model for custom filter state
+- Custom filter rendering in `renderSidebar()` with theme-aware styles
+- Filter displays below "PROJECTS" title with blinking cursor during input mode
+- Filter logic in `updateDisplayedProjects()` uses case-insensitive substring matching
+- Global key handler routes keys to sidebar when in custom filter mode
+- Navigation keys (Up/Down) disabled during filter mode to allow 'j'/'k' in search terms
+- Disabled list status bar (`SetShowStatusBar(false)`) and list filtering (`SetFilteringEnabled(false)`)
+- Backspace key removes characters from filter input
+
 ## [0.1.1] - 2026-01-21
 
 ### Added
@@ -117,5 +174,6 @@ This project uses [0ver](https://0ver.org/) versioning.
 
 | Version | Date | Summary |
 |---------|------|---------|
+| 0.1.2 | 2026-01-21 | UI components: spinners, table, list with fuzzy search, styled section titles |
 | 0.1.1 | 2026-01-21 | UI polish: centered modals, theme expansion, animations |
 | 0.1.0 | 2026-01-20 | Initial release |

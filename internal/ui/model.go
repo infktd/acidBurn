@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -28,6 +32,41 @@ const (
 	PaneServices
 	PaneLogs
 )
+
+// projectListItem implements list.Item for the project list.
+type projectListItem struct {
+	project *registry.Project
+	state   registry.ProjectState
+}
+
+func (i projectListItem) FilterValue() string {
+	return i.project.Name
+}
+
+func (i projectListItem) Title() string {
+	return i.project.Name
+}
+
+func (i projectListItem) Description() string {
+	return i.project.Path
+}
+
+// sectionHeaderItem represents a section header in the project list.
+type sectionHeaderItem struct {
+	title string
+}
+
+func (i sectionHeaderItem) FilterValue() string {
+	return "" // Headers don't participate in filtering
+}
+
+func (i sectionHeaderItem) Title() string {
+	return i.title
+}
+
+func (i sectionHeaderItem) Description() string {
+	return ""
+}
 
 // Model is the main application model for acidBurn.
 type Model struct {
@@ -55,21 +94,28 @@ type Model struct {
 	searchMode  bool
 	searchInput string
 
-	// Project search state (for sidebar)
-	projectSearchMode  bool
-	projectSearchInput string
+	// Project filter state (custom implementation)
+	projectFilterMode  bool
+	projectFilterInput string
 
 	// Components
-	logView     *LogView
-	toast       *ToastManager
-	alerts      *AlertHistory
-	alertsPanel *AlertsPanel
-	settings    *SettingsPanel
-	helpPanel   *HelpPanel
-	splash      *SplashScreen
-	confirm     *ConfirmDialog
-	health      *health.Monitor
-	notifier    *notify.Notifier
+	logView       *LogView
+	toast         *ToastManager
+	alerts        *AlertHistory
+	alertsPanel   *AlertsPanel
+	settings      *SettingsPanel
+	helpPanel     *HelpPanel
+	splash        *SplashScreen
+	confirm       *ConfirmDialog
+	health        *health.Monitor
+	notifier      *notify.Notifier
+	spinner       spinner.Model
+	servicesTable table.Model
+	projectsList  list.Model
+
+	// Loading state
+	loadingOp      string // Description of current operation
+	loadingProject string // Project being operated on
 
 	// Compose clients per project (keyed by project path)
 	clients map[string]*compose.Client
@@ -135,6 +181,48 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 
 	alertHistory := NewAlertHistory(100)
 
+	// Initialize spinner
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(theme.Primary)
+
+	// Initialize services table
+	columns := []table.Column{
+		{Title: "SERVICE", Width: 20},
+		{Title: "STATUS", Width: 10},
+		{Title: "PID", Width: 8},
+		{Title: "CPU", Width: 8},
+		{Title: "MEM", Width: 10},
+		{Title: "EXIT", Width: 6},
+	}
+	t := table.New(
+		table.WithColumns(columns),
+		table.WithFocused(false),
+		table.WithHeight(10),
+	)
+	tableStyle := table.DefaultStyles()
+	tableStyle.Header = tableStyle.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(theme.Muted).
+		BorderBottom(true).
+		Bold(true).
+		Foreground(theme.Primary)
+	tableStyle.Selected = tableStyle.Selected.
+		Foreground(theme.Primary).
+		Bold(true)
+	t.SetStyles(tableStyle)
+
+	// Initialize projects list with custom delegate (model set later to avoid circular reference)
+	projectsDelegate := &projectDelegate{styles: styles}
+	projectsList := list.New([]list.Item{}, projectsDelegate, 30, 20)
+	projectsList.Title = ""
+	projectsList.SetShowStatusBar(false)  // Hide status bar (prevents "2items" counter from section headers)
+	projectsList.SetFilteringEnabled(false)  // Disable built-in filter (we'll use custom)
+	projectsList.SetShowHelp(false)
+
+	// Apply theme colors directly to list styles
+	projectsList.Styles.Title = lipgloss.NewStyle()  // Hide default title
+
 	m := &Model{
 		config:   cfg,
 		registry: reg,
@@ -143,18 +231,21 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 		focused:  PaneSidebar,
 
 		// Initialize components
-		logView:     NewLogView(styles, 80, 20),
-		toast:       NewToastManager(styles, 60),
-		alerts:      alertHistory,
-		alertsPanel: NewAlertsPanel(styles, alertHistory, 80, 24),
-		settings:    NewSettingsPanel(cfg, styles, 80, 24),
-		helpPanel:   NewHelpPanel(styles, 80, 24),
-		splash:      NewSplashScreen(styles, 80, 24),
-		confirm:     NewConfirmDialog(styles),
-		health:       health.NewMonitor(2 * time.Second),
-		notifier:     notify.NewNotifier(cfg.Notifications.SystemEnabled),
-		clients:      make(map[string]*compose.Client),
-		lastLogMsg:   make(map[string]string),
+		logView:       NewLogView(styles, 80, 20),
+		toast:         NewToastManager(styles, 60),
+		alerts:        alertHistory,
+		alertsPanel:   NewAlertsPanel(styles, alertHistory, 80, 24),
+		settings:      NewSettingsPanel(cfg, styles, 80, 24),
+		helpPanel:     NewHelpPanel(styles, 80, 24),
+		splash:        NewSplashScreen(styles, 80, 24),
+		confirm:       NewConfirmDialog(styles),
+		health:        health.NewMonitor(2 * time.Second),
+		notifier:      notify.NewNotifier(cfg.Notifications.SystemEnabled),
+		spinner:       s,
+		servicesTable: t,
+		projectsList:  projectsList,
+		clients:       make(map[string]*compose.Client),
+		lastLogMsg:    make(map[string]string),
 		projectStates: make(map[string]registry.ProjectState),
 	}
 
@@ -162,6 +253,9 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 	m.showSplash = true
 	m.splash.SetMessage("Starting acidBurn...")
 	m.splash.SetProgress(0.0)
+
+	// Set model reference on delegate (needed for spinner and loading state)
+	projectsDelegate.model = m
 
 	// Initialize displayed projects
 	m.updateDisplayedProjects()
@@ -175,6 +269,7 @@ func (m *Model) Init() tea.Cmd {
 		m.tickCmd(),
 		m.pollServicesCmd(),
 		m.splashTickCmd(),
+		m.spinner.Tick,
 	)
 }
 
@@ -382,6 +477,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.alertsPanel.SetSize(m.width, m.height)
 		m.toast = NewToastManager(m.styles, m.width-10)
 
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
 	case splashTickMsg:
 		if m.showSplash {
 			// Increment progress by ~10% each tick (50ms intervals = ~500ms total)
@@ -432,6 +532,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.services[i].Name < m.services[j].Name
 			})
 
+			// Update table rows
+			m.updateServicesTable()
+
 			// Update health monitor and check for state changes
 			for _, svc := range msg.services {
 				projectName := ""
@@ -453,6 +556,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedService = 0
 				}
 			}
+			// Update table cursor
+			m.servicesTable.SetCursor(m.selectedService)
 
 			// Poll logs after services update
 			cmds = append(cmds, m.pollLogsCmd())
@@ -533,6 +638,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case projectStartedMsg:
+		// Clear loading state
+		m.loadingOp = ""
+		m.loadingProject = ""
 		if msg.err != nil {
 			m.toast.Show(fmt.Sprintf("Failed to start %s: %v", msg.project, msg.err), ToastError, 5*time.Second)
 		} else {
@@ -542,6 +650,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.pollServicesCmd())
 
 	case projectStoppedMsg:
+		// Clear loading state
+		m.loadingOp = ""
+		m.loadingProject = ""
 		if msg.err != nil {
 			m.toast.Show(fmt.Sprintf("Failed to stop %s: %v", msg.project, msg.err), ToastError, 5*time.Second)
 		} else {
@@ -573,6 +684,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.toast.Show("Settings saved", ToastSuccess, 2*time.Second)
 		// Reload styles if theme changed
 		m.styles = NewStyles(GetTheme(m.config.UI.Theme))
+
+		// Update delegate with new styles
+		newDelegate := &projectDelegate{styles: m.styles, model: m}
+		m.projectsList.SetDelegate(newDelegate)
+
+		// Update table styles
+		tableStyle := table.DefaultStyles()
+		tableStyle.Header = tableStyle.Header.
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(m.styles.theme.Muted).
+			BorderBottom(true).
+			Bold(true).
+			Foreground(m.styles.theme.Primary)
+		tableStyle.Selected = tableStyle.Selected.
+			Foreground(m.styles.theme.Primary).
+			Bold(true)
+		m.servicesTable.SetStyles(tableStyle)
+
+		// Update spinner style
+		m.spinner.Style = lipgloss.NewStyle().Foreground(m.styles.theme.Primary)
+
 		cmds = append(cmds, m.toast.TickCmd())
 
 	case settingsSaveErrorMsg:
@@ -693,30 +825,6 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	// Project search input mode (sidebar)
-	if m.projectSearchMode {
-		switch msg.Type {
-		case tea.KeyEsc:
-			m.projectSearchMode = false
-			m.projectSearchInput = ""
-			return m, nil
-		case tea.KeyEnter:
-			m.projectSearchMode = false
-			// Keep filter active, just exit input mode
-			return m, nil
-		case tea.KeyBackspace:
-			if len(m.projectSearchInput) > 0 {
-				m.projectSearchInput = m.projectSearchInput[:len(m.projectSearchInput)-1]
-			}
-			return m, nil
-		default:
-			if msg.Type == tea.KeyRunes {
-				m.projectSearchInput += string(msg.Runes)
-			}
-			return m, nil
-		}
-	}
-
 	// Log search input mode
 	if m.searchMode {
 		switch msg.Type {
@@ -775,17 +883,24 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Back):
+		// Don't handle Esc globally if sidebar is filtering
+		if m.focused == PaneSidebar && m.projectFilterMode {
+			// Let sidebar handler deal with it
+			return m.handleSidebarKey(msg)
+		}
 		return m, nil
 	}
 
-	// Navigation keys
-	switch {
-	case key.Matches(msg, m.keys.Up):
-		m.moveUp()
-		return m, nil
-	case key.Matches(msg, m.keys.Down):
-		m.moveDown()
-		return m, nil
+	// Navigation keys (skip if sidebar is filtering - those keys might be part of search)
+	if m.focused != PaneSidebar || !m.projectFilterMode {
+		switch {
+		case key.Matches(msg, m.keys.Up):
+			m.moveUp()
+			return m, nil
+		case key.Matches(msg, m.keys.Down):
+			m.moveDown()
+			return m, nil
+		}
 	}
 
 	// Pane-specific keys
@@ -802,18 +917,38 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keys.Search) || msg.String() == "/":
-		// / - enter project search mode
-		m.projectSearchMode = true
-		m.projectSearchInput = ""
-		return m, nil
-	case key.Matches(msg, m.keys.Back):
-		// Esc - clear project search filter
-		if m.projectSearchInput != "" {
-			m.projectSearchInput = ""
+	// Handle custom project filter mode
+	if m.projectFilterMode {
+		switch msg.Type {
+		case tea.KeyEsc:
+			// Exit filter mode and clear
+			m.projectFilterMode = false
+			m.projectFilterInput = ""
+			m.updateDisplayedProjects()
+			return m, nil
+		case tea.KeyEnter:
+			// Keep filter applied, just exit input mode
+			m.projectFilterMode = false
+			return m, nil
+		case tea.KeyBackspace:
+			if len(m.projectFilterInput) > 0 {
+				m.projectFilterInput = m.projectFilterInput[:len(m.projectFilterInput)-1]
+				m.updateDisplayedProjects()
+			}
+			return m, nil
+		case tea.KeyRunes:
+			m.projectFilterInput += string(msg.Runes)
+			m.updateDisplayedProjects()
 			return m, nil
 		}
+		return m, nil
+	}
+
+	switch {
+	case key.Matches(msg, m.keys.Search) || msg.String() == "/":
+		// Enter custom filter mode
+		m.projectFilterMode = true
+		m.projectFilterInput = ""
 		return m, nil
 	case key.Matches(msg, m.keys.Select):
 		// Enter - select project and move to services
@@ -830,6 +965,8 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			state := p.DetectState()
 			if state == registry.StateIdle || state == registry.StateStale {
 				// Start idle project with devenv up -d
+				m.loadingOp = "Starting"
+				m.loadingProject = p.Name
 				m.toast.Show(fmt.Sprintf("Starting %s...", p.Name), ToastInfo, 3*time.Second)
 				return m, tea.Batch(m.startProjectCmd(p), m.toast.TickCmd())
 			} else if client := m.getOrCreateClient(p); client != nil {
@@ -847,6 +984,8 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if p := m.currentProject(); p != nil {
 			state := p.DetectState()
 			if state == registry.StateRunning || state == registry.StateDegraded {
+				m.loadingOp = "Stopping"
+				m.loadingProject = p.Name
 				m.toast.Show(fmt.Sprintf("Stopping %s...", p.Name), ToastInfo, 3*time.Second)
 				return m, tea.Batch(m.stopProjectCmd(p), m.toast.TickCmd())
 			}
@@ -913,7 +1052,19 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	return m, nil
+
+	// Pass message to list component for filtering (handles '/' key)
+	var cmd tea.Cmd
+	m.projectsList, cmd = m.projectsList.Update(msg)
+
+	// Sync selection after list update (in case filter changed)
+	if selectedItem := m.projectsList.SelectedItem(); selectedItem != nil {
+		if _, isProject := selectedItem.(projectListItem); isProject {
+			m.selectedProject = m.listIndexToProjectIndex(m.projectsList.Index())
+		}
+	}
+
+	return m, cmd
 }
 
 func (m *Model) handleServicesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1028,6 +1179,14 @@ func (m *Model) updateDisplayedProjects() {
 		state := p.DetectState()
 		// Cache the state so we use consistent state during rendering
 		m.projectStates[p.Path] = state
+
+		// Apply filter if active
+		if m.projectFilterInput != "" {
+			if !strings.Contains(strings.ToLower(p.Name), strings.ToLower(m.projectFilterInput)) {
+				continue // Skip projects that don't match filter
+			}
+		}
+
 		if state == registry.StateRunning || state == registry.StateDegraded {
 			active = append(active, p)
 		} else {
@@ -1045,6 +1204,37 @@ func (m *Model) updateDisplayedProjects() {
 
 	m.displayedProjects = append(active, idle...)
 
+	// Update list items with section headers
+	var items []list.Item
+
+	// Add ACTIVE section
+	if len(active) > 0 {
+		items = append(items, sectionHeaderItem{title: "ACTIVE"})
+		for _, p := range active {
+			items = append(items, projectListItem{
+				project: p,
+				state:   m.projectStates[p.Path],
+			})
+		}
+	}
+
+	// Add IDLE section
+	if len(idle) > 0 {
+		items = append(items, sectionHeaderItem{title: "IDLE"})
+		for _, p := range idle {
+			items = append(items, projectListItem{
+				project: p,
+				state:   m.projectStates[p.Path],
+			})
+		}
+	}
+
+	m.projectsList.SetItems(items)
+
+	// Convert project index to list index (accounting for headers)
+	listIndex := m.projectIndexToListIndex(m.selectedProject)
+	m.projectsList.Select(listIndex)
+
 	// Clamp selection
 	if m.selectedProject >= len(m.displayedProjects) {
 		m.selectedProject = len(m.displayedProjects) - 1
@@ -1052,6 +1242,57 @@ func (m *Model) updateDisplayedProjects() {
 			m.selectedProject = 0
 		}
 	}
+	listIndex = m.projectIndexToListIndex(m.selectedProject)
+	m.projectsList.Select(listIndex)
+
+	// Ensure we're not on a header (this shouldn't happen, but safety check)
+	if len(m.projectsList.Items()) > 0 {
+		if _, isHeader := m.projectsList.SelectedItem().(sectionHeaderItem); isHeader {
+			// Move to first non-header item
+			for i, item := range m.projectsList.Items() {
+				if _, isHeader := item.(sectionHeaderItem); !isHeader {
+					m.projectsList.Select(i)
+					m.selectedProject = m.listIndexToProjectIndex(i)
+					break
+				}
+			}
+		}
+	}
+}
+
+// projectIndexToListIndex converts a project index to a list index (accounting for section headers).
+func (m *Model) projectIndexToListIndex(projectIndex int) int {
+	if projectIndex < 0 {
+		return 0
+	}
+
+	listIndex := 0
+	projectsSeen := 0
+
+	for _, item := range m.projectsList.Items() {
+		if _, isHeader := item.(sectionHeaderItem); isHeader {
+			listIndex++
+			continue
+		}
+		if projectsSeen == projectIndex {
+			return listIndex
+		}
+		projectsSeen++
+		listIndex++
+	}
+
+	return listIndex
+}
+
+// listIndexToProjectIndex converts a list index to a project index (skipping section headers).
+func (m *Model) listIndexToProjectIndex(listIndex int) int {
+	projectIndex := 0
+	for i := 0; i < listIndex && i < len(m.projectsList.Items()); i++ {
+		if _, isHeader := m.projectsList.Items()[i].(sectionHeaderItem); !isHeader {
+			projectIndex++
+		}
+	}
+	return projectIndex
 }
 
 func (m *Model) cycleFocus() {
@@ -1061,12 +1302,26 @@ func (m *Model) cycleFocus() {
 func (m *Model) moveUp() {
 	switch m.focused {
 	case PaneSidebar:
-		if m.selectedProject > 0 {
-			m.selectedProject--
+		// Use list's cursor movement
+		currentIdx := m.projectsList.Index()
+		if currentIdx > 0 {
+			m.projectsList.CursorUp()
+
+			// Skip over headers
+			for m.projectsList.Index() > 0 {
+				if _, isHeader := m.projectsList.SelectedItem().(sectionHeaderItem); !isHeader {
+					break
+				}
+				m.projectsList.CursorUp()
+			}
+
+			// Update selectedProject to match
+			m.selectedProject = m.listIndexToProjectIndex(m.projectsList.Index())
 		}
 	case PaneServices:
 		if m.selectedService > 0 {
 			m.selectedService--
+			m.servicesTable.SetCursor(m.selectedService)
 		}
 	case PaneLogs:
 		m.logView.ScrollUp()
@@ -1076,13 +1331,26 @@ func (m *Model) moveUp() {
 func (m *Model) moveDown() {
 	switch m.focused {
 	case PaneSidebar:
-		maxIdx := len(m.displayedProjects) - 1
-		if m.selectedProject < maxIdx {
-			m.selectedProject++
+		// Use list's cursor movement
+		maxIdx := len(m.projectsList.Items()) - 1
+		if m.projectsList.Index() < maxIdx {
+			m.projectsList.CursorDown()
+
+			// Skip over headers
+			for m.projectsList.Index() < maxIdx {
+				if _, isHeader := m.projectsList.SelectedItem().(sectionHeaderItem); !isHeader {
+					break
+				}
+				m.projectsList.CursorDown()
+			}
+
+			// Update selectedProject to match
+			m.selectedProject = m.listIndexToProjectIndex(m.projectsList.Index())
 		}
 	case PaneServices:
 		if m.selectedService < len(m.services)-1 {
 			m.selectedService++
+			m.servicesTable.SetCursor(m.selectedService)
 		}
 	case PaneLogs:
 		m.logView.ScrollDown()
@@ -1221,64 +1489,39 @@ func (m *Model) renderBody() string {
 }
 
 func (m *Model) renderSidebar(width, height int) string {
-	var content string
+	// Title line
+	titleLine := m.renderSectionTitle("PROJECTS", m.focused == PaneSidebar, width-4)
 
-	// Filter projects by search if active
-	projects := m.displayedProjects
-	if m.projectSearchInput != "" {
-		filtered := make([]*registry.Project, 0)
-		query := strings.ToLower(m.projectSearchInput)
-		for _, p := range m.displayedProjects {
-			if strings.Contains(strings.ToLower(p.Name), query) {
-				filtered = append(filtered, p)
-			}
+	// Custom filter UI
+	var filterLine string
+	listHeight := height - 4
+	if m.projectFilterMode || m.projectFilterInput != "" {
+		filterPromptStyle := lipgloss.NewStyle().
+			Foreground(m.styles.theme.Primary).
+			Bold(true)
+		filterInputStyle := lipgloss.NewStyle().
+			Foreground(m.styles.theme.Primary)
+
+		if m.projectFilterMode {
+			// Show cursor when in input mode
+			filterLine = filterPromptStyle.Render("Filter: ") + filterInputStyle.Render(m.projectFilterInput+"_")
+		} else {
+			// Show filter without cursor when applied but not in input mode
+			filterLine = filterPromptStyle.Render("Filter: ") + filterInputStyle.Render(m.projectFilterInput)
 		}
-		projects = filtered
+		listHeight = height - 5 // Reduce by 1 for filter line
 	}
 
-	// Count active projects using cached states
-	projectCount := len(projects)
-	activeCount := 0
-	activeEnd := 0
-	for i, p := range projects {
-		state := m.projectStates[p.Path]
-		if state == registry.StateRunning || state == registry.StateDegraded {
-			activeCount++
-			activeEnd = i + 1
-		}
-	}
+	// Update list size and render
+	m.projectsList.SetSize(width-4, listHeight)
+	listView := m.projectsList.View()
 
-	// Title with focus indicator
-	title := fmt.Sprintf("PROJECTS [%d/%d]", activeCount, projectCount)
-	if m.focused == PaneSidebar {
-		title = "> " + title
+	// Build content
+	content := titleLine + "\n"
+	if filterLine != "" {
+		content += filterLine + "\n"
 	}
-	content += m.styles.Title.Render(title) + "\n"
-
-	// Search input or placeholder
-	if m.projectSearchMode {
-		content += m.styles.SelectedItem.Render(fmt.Sprintf("/%s_", m.projectSearchInput)) + "\n\n"
-	} else if m.projectSearchInput != "" {
-		content += m.styles.Breadcrumb.Render(fmt.Sprintf("/%s", m.projectSearchInput)) + "\n\n"
-	} else {
-		content += m.styles.Breadcrumb.Render("/ search...") + "\n\n"
-	}
-
-	// Active section
-	content += m.styles.Breadcrumb.Render("── ACTIVE ──") + "\n"
-	for i := 0; i < activeEnd; i++ {
-		content += m.renderProjectItem(i, projects[i]) + "\n"
-	}
-
-	// Idle section
-	content += "\n" + m.styles.Breadcrumb.Render("── IDLE ──") + "\n"
-	for i := activeEnd; i < len(projects); i++ {
-		content += m.renderProjectItem(i, projects[i]) + "\n"
-	}
-
-	// Global section
-	content += "\n" + m.styles.Breadcrumb.Render("── GLOBAL ──") + "\n"
-	content += m.styles.ProjectItem.Render("▤ ALL LOGS") + "\n"
+	content += listView
 
 	style := m.styles.BlurredBorder
 	if m.focused == PaneSidebar {
@@ -1292,17 +1535,23 @@ func (m *Model) renderProjectItem(idx int, p *registry.Project) string {
 	// Use cached state for consistent rendering
 	state := m.projectStates[p.Path]
 	var glyph string
-	switch state {
-	case registry.StateRunning:
-		glyph = m.styles.StatusRunning.Render("●")
-	case registry.StateDegraded:
-		glyph = m.styles.StatusDegraded.Render("◐")
-	case registry.StateIdle:
-		glyph = m.styles.StatusIdle.Render("○")
-	case registry.StateStale:
-		glyph = m.styles.StatusStale.Render("✗")
-	case registry.StateMissing:
-		glyph = m.styles.StatusMissing.Render("✗")
+
+	// Show spinner if this project is currently loading
+	if m.loadingProject == p.Name && m.loadingOp != "" {
+		glyph = m.spinner.View()
+	} else {
+		switch state {
+		case registry.StateRunning:
+			glyph = m.styles.StatusRunning.Render("●")
+		case registry.StateDegraded:
+			glyph = m.styles.StatusDegraded.Render("◐")
+		case registry.StateIdle:
+			glyph = m.styles.StatusIdle.Render("○")
+		case registry.StateStale:
+			glyph = m.styles.StatusStale.Render("✗")
+		case registry.StateMissing:
+			glyph = m.styles.StatusMissing.Render("✗")
+		}
 	}
 
 	name := p.Name
@@ -1353,69 +1602,25 @@ func (m *Model) renderServices(width, height int) string {
 
 	if p := m.currentProject(); p != nil {
 		// Title with focus indicator
-		title := fmt.Sprintf("[Project: %s]", p.Name)
-		if m.focused == PaneServices {
-			title = "> " + title
-		}
-		content = m.styles.Title.Render(title) + "\n\n"
+		title := fmt.Sprintf("SERVICES [%s]", p.Name)
+		content = m.renderSectionTitle(title, m.focused == PaneServices, width-4) + "\n\n"
 
 		if len(m.services) == 0 {
 			content += m.styles.Breadcrumb.Render("No services running - press 's' to start")
 		} else {
-			// Table header
-			header := fmt.Sprintf("%-18s %-8s %-7s %-6s %-8s %-5s", "SERVICE", "STATUS", "PID", "CPU", "MEM", "EXIT")
-			content += m.styles.Breadcrumb.Render(header) + "\n"
-			content += m.styles.Breadcrumb.Render("─────────────────────────────────────────────────────────") + "\n"
-
-			for i, svc := range m.services {
-				var statusGlyph, status string
-				if svc.IsRunning {
-					statusGlyph = m.styles.StatusRunning.Render("●")
-					status = "Running"
-				} else {
-					statusGlyph = m.styles.StatusIdle.Render("○")
-					status = "Stopped"
-				}
-
-				pid := "-"
-				if svc.Pid > 0 {
-					pid = fmt.Sprintf("%d", svc.Pid)
-				}
-				exit := "-"
-				if svc.ExitCode != 0 {
-					exit = fmt.Sprintf("%d", svc.ExitCode)
-				}
-
-				// Format CPU (percentage)
-				cpu := "-"
-				if svc.IsRunning && svc.CPU > 0 {
-					cpu = fmt.Sprintf("%.1f%%", svc.CPU)
-				}
-
-				// Format memory (human readable)
-				mem := "-"
-				if svc.IsRunning && svc.Mem > 0 {
-					mem = formatBytes(svc.Mem)
-				}
-
-				cursor := "  "
-				if i == m.selectedService {
-					cursor = "> "
-				}
-
-				line := fmt.Sprintf("%s%s %-16s %-8s %-7s %-6s %-8s %-5s", cursor, statusGlyph, svc.Name, status, pid, cpu, mem, exit)
-
-				if i == m.selectedService && m.focused == PaneServices {
-					line = m.styles.SelectedItem.Render(line)
-				} else if i == m.selectedService {
-					// Dimmed when not focused
-					line = m.styles.Breadcrumb.Render(line)
-				}
-				content += line + "\n"
+			// Update table focus based on pane focus
+			m.servicesTable.SetHeight(height - 6)
+			if m.focused == PaneServices {
+				m.servicesTable.Focus()
+			} else {
+				m.servicesTable.Blur()
 			}
+
+			// Render the table
+			content += m.servicesTable.View()
 		}
 	} else {
-		content = m.styles.Title.Render("SERVICES") + "\n"
+		content = m.renderSectionTitle("SERVICES", m.focused == PaneServices, width-4) + "\n"
 		content += m.styles.Breadcrumb.Render("Select a project from the sidebar")
 	}
 
@@ -1432,32 +1637,32 @@ func (m *Model) renderLogs(width, height int) string {
 
 	// Title with focus indicator
 	title := "LOGS"
-	if m.focused == PaneLogs {
-		title = "> LOGS"
-	}
-	content := m.styles.Title.Render(title)
+	content := m.renderSectionTitle(title, m.focused == PaneLogs, width-4) + "\n"
+
+	// Build status line with filters
+	var statusParts []string
 
 	// Show service filter if active
 	if svc := m.logView.GetService(); svc != "" {
-		content += m.styles.Breadcrumb.Render(fmt.Sprintf(" [%s]", svc))
+		statusParts = append(statusParts, fmt.Sprintf("[%s]", svc))
 	} else {
-		content += m.styles.Breadcrumb.Render(" [ALL]")
+		statusParts = append(statusParts, "[ALL]")
 	}
 
 	if m.logView.IsFollowing() {
-		content += m.styles.Breadcrumb.Render(" [FOLLOW]")
+		statusParts = append(statusParts, "[FOLLOW]")
 	}
 
 	// Show scroll position
 	current, total := m.logView.ScrollInfo()
 	if total > 0 {
-		content += m.styles.Breadcrumb.Render(fmt.Sprintf(" %d/%d", current, total))
+		statusParts = append(statusParts, fmt.Sprintf("%d/%d", current, total))
 	}
 
 	// Show search info
 	if m.searchMode {
 		// Active input mode - show cursor
-		content += m.styles.SelectedItem.Render(fmt.Sprintf(" /%s_", m.searchInput))
+		statusParts = append(statusParts, m.styles.SelectedItem.Render(fmt.Sprintf("/%s_", m.searchInput)))
 	} else if m.logView.IsSearchActive() {
 		// Search active but not in input mode
 		matchInfo := ""
@@ -1467,12 +1672,18 @@ func (m *Model) renderLogs(width, height int) string {
 			matchInfo = " (no matches)"
 		}
 		if m.logView.IsFilterMode() {
-			content += m.styles.Breadcrumb.Render(fmt.Sprintf(" [FILTER: %s]%s", m.searchInput, matchInfo))
+			statusParts = append(statusParts, fmt.Sprintf("[FILTER: %s]%s", m.searchInput, matchInfo))
 		} else {
-			content += m.styles.Breadcrumb.Render(fmt.Sprintf(" [SEARCH: %s]%s", m.searchInput, matchInfo))
+			statusParts = append(statusParts, fmt.Sprintf("[SEARCH: %s]%s", m.searchInput, matchInfo))
 		}
 	}
-	content += "\n"
+
+	// Combine status parts
+	if len(statusParts) > 0 {
+		content += m.styles.Breadcrumb.Render(strings.Join(statusParts, " ")) + "\n"
+	} else {
+		content += "\n"
+	}
 
 	if m.logView.buffer.Len() == 0 {
 		content += m.styles.Breadcrumb.Render("No logs yet - logs will appear when services run")
@@ -1517,26 +1728,79 @@ func (m *Model) highlightKeys(text string) string {
 	return result
 }
 
+// updateServicesTable updates the table rows from the services list.
+func (m *Model) updateServicesTable() {
+	rows := make([]table.Row, len(m.services))
+	for i, svc := range m.services {
+		var status string
+		if svc.IsRunning {
+			status = "Running"
+		} else {
+			status = "Stopped"
+		}
+
+		pid := "-"
+		if svc.Pid > 0 {
+			pid = fmt.Sprintf("%d", svc.Pid)
+		}
+
+		cpu := "-"
+		if svc.IsRunning && svc.CPU > 0 {
+			cpu = fmt.Sprintf("%.1f%%", svc.CPU)
+		}
+
+		mem := "-"
+		if svc.IsRunning && svc.Mem > 0 {
+			mem = formatBytes(svc.Mem)
+		}
+
+		exit := "-"
+		if svc.ExitCode != 0 {
+			exit = fmt.Sprintf("%d", svc.ExitCode)
+		}
+
+		rows[i] = table.Row{svc.Name, status, pid, cpu, mem, exit}
+	}
+	m.servicesTable.SetRows(rows)
+}
+
+// renderSectionTitle renders a section title in code comment style with separator line.
+// Uses primary color if focused, muted color otherwise.
+func (m *Model) renderSectionTitle(title string, focused bool, width int) string {
+	// Calculate separator line length (width minus "// " and title and some padding)
+	separatorLen := width - len(title) - 4
+	if separatorLen < 0 {
+		separatorLen = 0
+	}
+	separator := strings.Repeat("─", separatorLen)
+
+	var style lipgloss.Style
+	if focused {
+		style = lipgloss.NewStyle().
+			Foreground(m.styles.theme.Primary).
+			Bold(true)
+	} else {
+		style = lipgloss.NewStyle().
+			Foreground(m.styles.theme.Muted)
+	}
+
+	return style.Render("// " + title + " " + separator)
+}
+
 func (m *Model) renderFooter() string {
 	var help string
 	switch m.focused {
 	case PaneSidebar:
-		if m.projectSearchMode {
-			help = "[Type] Search  [Enter] Confirm  [Esc] Cancel"
-		} else if m.projectSearchInput != "" {
-			help = "[/] Edit search  [Esc] Clear  [Enter] Select  [?] Help"
+		// Check if current project is stale to show repair option
+		isStale := false
+		if p := m.currentProject(); p != nil {
+			state := p.DetectState()
+			isStale = (state == registry.StateStale)
+		}
+		if isStale {
+			help = "[↑/↓] Navigate  [c] Repair  [d] Delete  [Ctrl+h] Hide  [?] Help"
 		} else {
-			// Check if current project is stale to show repair option
-			isStale := false
-			if p := m.currentProject(); p != nil {
-				state := p.DetectState()
-				isStale = (state == registry.StateStale)
-			}
-			if isStale {
-				help = "[↑/↓] Navigate  [c] Repair  [d] Delete  [Ctrl+h] Hide  [?] Help"
-			} else {
-				help = "[↑/↓] Navigate  [/] Search  [Enter] Select  [s] Start  [x] Stop  [d] Delete  [Ctrl+h] Hide  [?] Help"
-			}
+			help = "[↑/↓] Navigate  [/] Search  [Enter] Select  [s] Start  [x] Stop  [d] Delete  [Ctrl+h] Hide  [?] Help"
 		}
 	case PaneServices:
 		help = "[↑/↓] Navigate  [Enter] Filter  [s] Start  [x] Stop  [r] Restart  [?] Help"
@@ -1573,4 +1837,77 @@ func formatBytes(bytes int64) string {
 	default:
 		return fmt.Sprintf("%dB", bytes)
 	}
+}
+
+// projectDelegate is a custom list delegate for rendering projects.
+type projectDelegate struct {
+	styles *Styles
+	model  *Model // Reference to parent model for spinner/loading state
+}
+
+// NewProjectDelegate creates a new project delegate.
+func NewProjectDelegate(styles *Styles, model *Model) list.ItemDelegate {
+	return &projectDelegate{styles: styles, model: model}
+}
+
+func (d *projectDelegate) Height() int { return 1 }
+func (d *projectDelegate) Spacing() int { return 0 }
+func (d *projectDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
+
+func (d *projectDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	// Check if this is a section header
+	if headerItem, ok := item.(sectionHeaderItem); ok {
+		headerStyle := lipgloss.NewStyle().
+			Foreground(d.styles.theme.Muted).
+			Bold(true)
+		// Add a small visual separator
+		fmt.Fprintf(w, " %s", headerStyle.Render(headerItem.title))
+		return
+	}
+
+	projItem, ok := item.(projectListItem)
+	if !ok {
+		return
+	}
+
+	// Get status glyph (or spinner if loading)
+	var glyph string
+	if d.model != nil && d.model.loadingProject == projItem.project.Name && d.model.loadingOp != "" {
+		// Show spinner when this project is loading
+		glyph = d.model.spinner.View()
+	} else {
+		switch projItem.state {
+		case registry.StateRunning:
+			glyph = d.styles.StatusRunning.Render("●")
+		case registry.StateDegraded:
+			glyph = d.styles.StatusDegraded.Render("◐")
+		case registry.StateIdle:
+			glyph = d.styles.StatusIdle.Render("○")
+		case registry.StateStale:
+			glyph = d.styles.StatusStale.Render("✗")
+		case registry.StateMissing:
+			glyph = d.styles.StatusMissing.Render("✗")
+		}
+	}
+
+	name := projItem.project.Name
+	if projItem.project.Hidden {
+		name = name + " ■"
+	}
+
+	// Check if selected
+	isSelected := index == m.Index()
+	cursor := "   "  // Indent project items under section headers
+	if isSelected {
+		cursor = " > "
+		name = d.styles.SelectedItem.Render(name)
+	} else {
+		if projItem.project.Hidden {
+			name = d.styles.Breadcrumb.Render(name)
+		} else {
+			name = d.styles.ProjectItem.Render(name)
+		}
+	}
+
+	fmt.Fprintf(w, "%s%s %s", cursor, glyph, name)
 }
