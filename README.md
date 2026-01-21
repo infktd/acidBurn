@@ -1,0 +1,227 @@
+# acidBurn
+
+A terminal user interface (TUI) for managing devenv.sh environments. Think of it as "Docker Desktop for Nix" - a unified control plane for all your devenv projects.
+
+## Overview
+
+acidBurn provides a centralized dashboard for monitoring and controlling multiple devenv projects. It communicates with process-compose daemons via Unix sockets to display service status, stream logs, and manage service lifecycles.
+
+### Key Features
+
+- **Project Discovery**: Automatically scans configured directories for devenv projects
+- **Multi-Project Management**: View and switch between all your devenv projects in one place
+- **Service Control**: Start, stop, and restart individual services or entire projects
+- **Log Streaming**: Real-time log viewing with search, filtering, and level-based colorization
+- **Health Monitoring**: Track service crashes, recoveries, and state changes
+- **System Notifications**: Desktop notifications for critical events (crashes, recoveries)
+- **Theming**: Multiple color themes (acid-green, nord, dracula)
+- **Customizable UI**: Configurable sidebar width, timestamps, and log behavior
+
+## Requirements
+
+- Go 1.21 or later
+- devenv.sh installed and configured
+- process-compose (included with devenv)
+
+## Installation
+
+```bash
+go install github.com/infktd/acidburn@latest
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/infktd/acidburn
+cd acidburn
+go build -o acidburn .
+```
+
+## Usage
+
+```bash
+acidburn
+```
+
+On first run, acidBurn will:
+1. Create a default configuration at `~/.config/acidburn/config.yaml`
+2. Scan configured directories for devenv projects
+3. Create a project registry at `~/.config/acidburn/registry.yaml`
+
+## Keybindings
+
+### Global
+
+| Key | Action |
+|-----|--------|
+| `q` | Quit (detach from projects) |
+| `Ctrl+X` | Shutdown all services and quit |
+| `S` | Open settings |
+| `H` | View alert history |
+| `?` | Show help |
+| `Tab` | Cycle focus between panes |
+
+### Sidebar (Projects)
+
+| Key | Action |
+|-----|--------|
+| `Up/Down` | Navigate projects |
+| `/` | Search projects |
+| `Enter` | Select project |
+| `s` | Start project |
+| `x` | Stop project |
+| `Esc` | Clear search |
+
+### Services Pane
+
+| Key | Action |
+|-----|--------|
+| `Up/Down` | Navigate services |
+| `Enter` | Filter logs to service |
+| `s` | Start service |
+| `x` | Stop service |
+| `r` | Restart service |
+| `Esc` | Return to sidebar |
+
+### Logs Pane
+
+| Key | Action |
+|-----|--------|
+| `Up/Down` | Scroll logs |
+| `f` | Toggle follow mode |
+| `g` | Jump to top |
+| `G` | Jump to bottom |
+| `/` | Start search |
+| `n` | Next search match |
+| `N` | Previous search match |
+| `Ctrl+f` | Toggle filter mode (show only matches) |
+| `Esc` | Clear search/filter |
+
+## Configuration
+
+Configuration is stored at `~/.config/acidburn/config.yaml`:
+
+```yaml
+projects:
+  scan_paths:
+    - ~/code
+    - ~/projects
+  auto_discover: true
+  scan_depth: 3
+
+notifications:
+  system_enabled: true
+  tui_alerts: true
+  critical_only: false
+  overrides:
+    - service: postgres
+      system: true
+      critical_only: false
+
+ui:
+  theme: acid-green        # acid-green, nord, dracula
+  default_log_view: focused
+  log_follow: true
+  show_timestamps: true
+  dim_timestamps: true
+  sidebar_width: 25
+
+polling:
+  focused_project: 2       # seconds
+  background_project: 10   # seconds
+```
+
+## Project States
+
+acidBurn detects and displays project states:
+
+| State | Description |
+|-------|-------------|
+| Running | process-compose socket is active and responding |
+| Degraded | Some services have crashed (exit code != 0) |
+| Idle | No process-compose daemon running |
+| Stale | Socket file exists but daemon is not responding |
+| Missing | Project directory no longer exists |
+
+## Architecture
+
+```
+acidBurn
+├── main.go                 # Entry point
+└── internal/
+    ├── compose/            # process-compose API client
+    │   ├── client.go       # Unix socket HTTP client
+    │   └── types.go        # API response types
+    ├── config/             # Configuration management
+    │   ├── config.go       # Load/save YAML config
+    │   └── types.go        # Config struct definitions
+    ├── health/             # Service health monitoring
+    │   └── monitor.go      # Crash detection, recovery tracking
+    ├── notify/             # Desktop notifications
+    │   └── notify.go       # Cross-platform notifications
+    ├── registry/           # Project registry
+    │   ├── registry.go     # Load/save project list
+    │   └── types.go        # Project struct, state detection
+    ├── scanner/            # Project discovery
+    │   └── scanner.go      # Filesystem scanning for devenv.nix
+    └── ui/                 # Terminal UI (Bubble Tea)
+        ├── model.go        # Main application model
+        ├── keys.go         # Keybinding definitions
+        ├── styles.go       # Lipgloss style definitions
+        ├── theme.go        # Color themes
+        ├── logview.go      # Log viewport with search
+        ├── logbuffer.go    # Circular log buffer, level detection
+        ├── settings.go     # Settings panel (huh forms)
+        ├── splash.go       # Startup splash screen
+        ├── toast.go        # Toast notifications
+        ├── alerthistory.go # Alert history overlay
+        └── progress.go     # Progress bar component
+```
+
+## How It Works
+
+1. **Project Discovery**: On startup, acidBurn scans configured directories for `devenv.nix` files, identifying devenv projects.
+
+2. **Socket Communication**: For each running project, acidBurn connects to the process-compose Unix socket at `.devenv/run/pc.sock` and communicates via the REST API.
+
+3. **State Detection**: Project state is determined by attempting to connect to the socket:
+   - Connection succeeds: Running
+   - Socket file exists but connection fails: Stale
+   - No socket file: Idle
+   - Directory missing: Missing
+
+4. **Log Streaming**: Logs are fetched via the process-compose API and displayed with automatic level detection (ERROR, WARN, INFO, DEBUG) and colorization.
+
+5. **Health Monitoring**: acidBurn tracks service state changes and emits events for crashes and recoveries, triggering toast notifications and optional desktop notifications.
+
+## Themes
+
+### acid-green (default)
+Classic hacker aesthetic with bright green on black.
+
+### nord
+Arctic, bluish color palette based on the Nord theme.
+
+### dracula
+Purple-based dark theme with pink accents.
+
+## ASCII Art Presets
+
+The splash screen supports multiple ASCII art styles:
+- `default` - Slant font
+- `block` - Block letters with Unicode box characters
+- `small` - Compact figlet style
+- `minimal` - Simple bordered text
+- `hacker` - Bold block style
+
+## License
+
+MIT
+
+## Acknowledgments
+
+- [Bubble Tea](https://github.com/charmbracelet/bubbletea) - TUI framework
+- [Lip Gloss](https://github.com/charmbracelet/lipgloss) - Style definitions
+- [huh](https://github.com/charmbracelet/huh) - Form components
+- [devenv](https://devenv.sh) - Developer environments
+- [process-compose](https://github.com/F1bonacc1/process-compose) - Process orchestration
