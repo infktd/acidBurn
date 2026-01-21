@@ -1083,6 +1083,12 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Don't pass navigation keys to list component since we handle them ourselves
+	// This prevents rendering glitches when the list tries to handle navigation too
+	if key.Matches(msg, m.keys.Up) || key.Matches(msg, m.keys.Down) {
+		return m, nil
+	}
+
 	// Pass message to list component for filtering (handles '/' key)
 	var cmd tea.Cmd
 	m.projectsList, cmd = m.projectsList.Update(msg)
@@ -1870,7 +1876,10 @@ func (m *Model) renderFooter() string {
 
 	// Highlight the keybinds
 	highlightedHelp := m.highlightKeys(help)
-	return lipgloss.NewStyle().Width(m.width).Render(highlightedHelp)
+	return lipgloss.NewStyle().
+		Width(m.width).
+		Align(lipgloss.Center).
+		Render(highlightedHelp)
 }
 
 // formatBytes converts bytes to human-readable format (KB, MB, GB).
