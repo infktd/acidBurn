@@ -935,6 +935,9 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Tab):
 		m.cycleFocus()
 		return m, nil
+	case key.Matches(msg, m.keys.ShiftTab):
+		m.cycleFocusReverse()
+		return m, nil
 	case key.Matches(msg, m.keys.Settings):
 		cmd := m.settings.Show()
 		m.showSettings = true
@@ -1373,6 +1376,10 @@ func (m *Model) listIndexToProjectIndex(listIndex int) int {
 
 func (m *Model) cycleFocus() {
 	m.focused = (m.focused + 1) % 3
+}
+
+func (m *Model) cycleFocusReverse() {
+	m.focused = (m.focused + 2) % 3 // +2 is same as -1 mod 3
 }
 
 func (m *Model) moveUp() {
@@ -1927,19 +1934,19 @@ func (m *Model) renderFooter() string {
 			isStale = (state == registry.StateStale)
 		}
 		if isStale {
-			help = "[↑/↓] Navigate  [c] Repair  [d] Delete  [Ctrl+h] Hide  [?] Help"
+			help = "[↑/↓] Navigate  [Tab] Switch Pane  [c] Repair  [d] Delete  [Ctrl+h] Hide  [?] Help"
 		} else {
-			help = "[↑/↓] Navigate  [/] Search  [Enter] Select  [s] Start  [x] Stop  [d] Delete  [Ctrl+h] Hide  [?] Help"
+			help = "[↑/↓] Navigate  [Tab] Switch Pane  [/] Search  [Enter] Select  [s] Start  [x] Stop  [d] Delete  [Ctrl+h] Hide  [?] Help"
 		}
 	case PaneServices:
-		help = "[↑/↓] Navigate  [Enter] Filter  [s] Start  [x] Stop  [r] Restart  [?] Help"
+		help = "[↑/↓] Navigate  [Tab] Switch Pane  [Enter] Filter  [s] Start  [x] Stop  [r] Restart  [?] Help"
 	case PaneLogs:
 		if m.searchMode {
 			help = "[Type] Search  [Enter] Confirm  [Esc] Cancel"
 		} else if m.logView.IsSearchActive() {
 			help = "[n/N] Next/Prev  [Ctrl+f] Filter  [/] New Search  [Esc] Clear  [?] Help"
 		} else {
-			help = "[↑/↓] Scroll  [f] Follow  [/] Search  [g/G] Top/Bottom  [?] Help"
+			help = "[↑/↓] Scroll  [Tab] Switch Pane  [f] Follow  [/] Search  [g/G] Top/Bottom  [?] Help"
 		}
 	}
 
