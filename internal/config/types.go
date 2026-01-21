@@ -53,13 +53,17 @@ type PollingConfig struct {
 
 // Default returns a Config with sensible defaults.
 func Default() *Config {
-	home, _ := os.UserHomeDir()
+	scanPaths := []string{}
+	home, err := os.UserHomeDir()
+	if err == nil {
+		scanPaths = []string{
+			filepath.Join(home, "code"),
+			filepath.Join(home, "projects"),
+		}
+	}
 	return &Config{
 		Projects: ProjectsConfig{
-			ScanPaths: []string{
-				filepath.Join(home, "code"),
-				filepath.Join(home, "projects"),
-			},
+			ScanPaths:    scanPaths,
 			AutoDiscover: true,
 			ScanDepth:    3,
 		},

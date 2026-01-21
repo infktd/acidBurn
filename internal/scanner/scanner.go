@@ -29,7 +29,10 @@ func Scan(paths []string, maxDepth int) ([]string, error) {
 	for _, root := range paths {
 		// Expand ~ if present
 		if strings.HasPrefix(root, "~/") {
-			home, _ := os.UserHomeDir()
+			home, err := os.UserHomeDir()
+			if err != nil {
+				continue // Skip paths we can't expand
+			}
 			root = filepath.Join(home, root[2:])
 		}
 
@@ -39,7 +42,10 @@ func Scan(paths []string, maxDepth int) ([]string, error) {
 			}
 
 			// Calculate depth relative to root
-			rel, _ := filepath.Rel(root, path)
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return nil // Skip paths with invalid relative paths
+			}
 			depth := len(strings.Split(rel, string(os.PathSeparator)))
 			if rel == "." {
 				depth = 0

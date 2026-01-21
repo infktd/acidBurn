@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/infktd/acidburn/internal/compose"
 )
 
 // ProjectState represents the current state of a project.
@@ -80,7 +82,8 @@ func (p *Project) DetectState() ProjectState {
 	conn, err := net.Dial("unix", socketPath)
 	if err == nil {
 		conn.Close()
-		return StateRunning // TODO: Check if degraded via API
+		// Socket is reachable, query API to check service states
+		return p.checkServiceStates()
 	}
 
 	// Check if socket file exists (stale)
@@ -89,4 +92,47 @@ func (p *Project) DetectState() ProjectState {
 	}
 
 	return StateIdle
+}
+
+// checkServiceStates queries the compose API to determine if the project is running or degraded.
+func (p *Project) checkServiceStates() ProjectState {
+	client := compose.NewClient(p.SocketPath())
+	if err := client.Connect(); err != nil {
+		// Can't connect, consider it idle
+		return StateIdle
+	}
+
+	status, err := client.GetStatus()
+	if err != nil {
+		// API error, assume running since socket was reachable
+		return StateRunning
+	}
+
+	// Count running and total processes
+	runningCount := 0
+	totalCount := len(status.Processes)
+
+	for _, proc := range status.Processes {
+		if proc.IsRunning {
+			runningCount++
+		}
+	}
+
+	// If no processes, consider idle
+	if totalCount == 0 {
+		return StateIdle
+	}
+
+	// If all processes running, fully operational
+	if runningCount == totalCount {
+		return StateRunning
+	}
+
+	// If some processes running, degraded
+	if runningCount > 0 {
+		return StateDegraded
+	}
+
+	// No processes running but socket exists
+	return StateStale
 }

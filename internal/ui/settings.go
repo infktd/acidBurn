@@ -1,94 +1,206 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/infktd/acidburn/internal/config"
 )
 
-// SettingsPanel manages the settings form.
-type SettingsPanel struct {
-	form    *huh.Form
-	config  *config.Config
-	visible bool
-	saved   bool
+// FieldType represents the type of setting field.
+type FieldType int
 
-	// Form values (bound to form fields)
-	autoDiscover   bool
-	scanDepth      int
-	theme          string
-	defaultLogView string
-	systemNotifs   bool
-	tuiAlerts      bool
+const (
+	FieldToggle FieldType = iota // Boolean on/off
+	FieldSelect                   // String/int with options
+	FieldButton                   // Action buttons (Save/Cancel)
+)
+
+// SelectOption represents an option in a Select field.
+type SelectOption struct {
+	Label string      // Display name
+	Value interface{} // Actual value (string or int)
+}
+
+// SettingField represents a single setting field.
+type SettingField struct {
+	Label    string
+	Type     FieldType
+	Options  []SelectOption // For Select fields
+	GetValue func() interface{}
+	SetValue func(interface{})
+}
+
+// SettingsPanel manages the settings modal.
+type SettingsPanel struct {
+	// Configuration
+	config *config.Config
+	styles *Styles
+
+	// Display state
+	visible bool
+	width   int
+	height  int
+
+	// Navigation state
+	selectedField int  // Current field index (0-7)
+	editMode      bool // True when editing a Select field
+
+	// Working copy of values (not committed until Save)
+	workingCopy struct {
+		autoDiscover   bool
+		scanDepth      int
+		defaultLogView string
+		theme          string
+		systemNotifs   bool
+		tuiAlerts      bool
+	}
+
+	// Field definitions
+	fields []SettingField
+}
+
+// settingsSavedMsg is sent when settings are successfully saved.
+type settingsSavedMsg struct{}
+
+// settingsSaveErrorMsg is sent when settings fail to save.
+type settingsSaveErrorMsg struct {
+	err error
 }
 
 // NewSettingsPanel creates a settings panel from the current config.
-func NewSettingsPanel(cfg *config.Config) *SettingsPanel {
+func NewSettingsPanel(cfg *config.Config, styles *Styles, width, height int) *SettingsPanel {
 	sp := &SettingsPanel{
 		config: cfg,
+		styles: styles,
+		width:  width,
+		height: height,
 	}
-	sp.loadFromConfig()
-	sp.buildForm()
+	sp.loadWorkingCopy()
+	sp.buildFields()
 	return sp
 }
 
-func (sp *SettingsPanel) loadFromConfig() {
-	sp.autoDiscover = sp.config.Projects.AutoDiscover
-	sp.scanDepth = sp.config.Projects.ScanDepth
-	sp.theme = sp.config.UI.Theme
-	sp.defaultLogView = sp.config.UI.DefaultLogView
-	sp.systemNotifs = sp.config.Notifications.SystemEnabled
-	sp.tuiAlerts = sp.config.Notifications.TUIAlerts
+// loadWorkingCopy copies config values to working copy.
+func (sp *SettingsPanel) loadWorkingCopy() {
+	sp.workingCopy.autoDiscover = sp.config.Projects.AutoDiscover
+	sp.workingCopy.scanDepth = sp.config.Projects.ScanDepth
+	sp.workingCopy.theme = sp.config.UI.Theme
+	sp.workingCopy.defaultLogView = sp.config.UI.DefaultLogView
+	sp.workingCopy.systemNotifs = sp.config.Notifications.SystemEnabled
+	sp.workingCopy.tuiAlerts = sp.config.Notifications.TUIAlerts
 }
 
-func (sp *SettingsPanel) buildForm() {
-	sp.form = huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Auto-discover projects").
-				Value(&sp.autoDiscover),
-			huh.NewSelect[int]().
-				Title("Scan depth").
-				Options(
-					huh.NewOption("1", 1),
-					huh.NewOption("2", 2),
-					huh.NewOption("3", 3),
-					huh.NewOption("4", 4),
-					huh.NewOption("5", 5),
-				).
-				Value(&sp.scanDepth),
-			huh.NewSelect[string]().
-				Title("Default log view").
-				Options(
-					huh.NewOption("Focused", "focused"),
-					huh.NewOption("Unified", "unified"),
-				).
-				Value(&sp.defaultLogView),
-			huh.NewSelect[string]().
-				Title("Theme").
-				Options(
-					huh.NewOption("Acid Green", "acid-green"),
-					huh.NewOption("Nord", "nord"),
-					huh.NewOption("Dracula", "dracula"),
-				).
-				Value(&sp.theme),
-			huh.NewConfirm().
-				Title("System notifications").
-				Value(&sp.systemNotifs),
-			huh.NewConfirm().
-				Title("TUI alerts").
-				Value(&sp.tuiAlerts),
-		).Title("Settings"),
-	).WithShowHelp(true)
+// applyWorkingCopy applies working copy to config.
+func (sp *SettingsPanel) applyWorkingCopy() {
+	sp.config.Projects.AutoDiscover = sp.workingCopy.autoDiscover
+	sp.config.Projects.ScanDepth = sp.workingCopy.scanDepth
+	sp.config.UI.Theme = sp.workingCopy.theme
+	sp.config.UI.DefaultLogView = sp.workingCopy.defaultLogView
+	sp.config.Notifications.SystemEnabled = sp.workingCopy.systemNotifs
+	sp.config.Notifications.TUIAlerts = sp.workingCopy.tuiAlerts
 }
 
-// Show makes the settings panel visible and returns the init command.
+// buildFields creates the field definitions.
+func (sp *SettingsPanel) buildFields() {
+	sp.fields = []SettingField{
+		{
+			Label: "Auto-discover projects",
+			Type:  FieldToggle,
+			GetValue: func() interface{} {
+				return sp.workingCopy.autoDiscover
+			},
+			SetValue: func(v interface{}) {
+				sp.workingCopy.autoDiscover = v.(bool)
+			},
+		},
+		{
+			Label: "Scan depth",
+			Type:  FieldSelect,
+			Options: []SelectOption{
+				{Label: "1", Value: 1},
+				{Label: "2", Value: 2},
+				{Label: "3", Value: 3},
+				{Label: "4", Value: 4},
+				{Label: "5", Value: 5},
+			},
+			GetValue: func() interface{} {
+				return sp.workingCopy.scanDepth
+			},
+			SetValue: func(v interface{}) {
+				sp.workingCopy.scanDepth = v.(int)
+			},
+		},
+		{
+			Label: "Default log view",
+			Type:  FieldSelect,
+			Options: []SelectOption{
+				{Label: "Focused", Value: "focused"},
+				{Label: "Unified", Value: "unified"},
+			},
+			GetValue: func() interface{} {
+				return sp.workingCopy.defaultLogView
+			},
+			SetValue: func(v interface{}) {
+				sp.workingCopy.defaultLogView = v.(string)
+			},
+		},
+		{
+			Label: "Theme",
+			Type:  FieldSelect,
+			Options: []SelectOption{
+				{Label: "Acid Green", Value: "acid-green"},
+				{Label: "Nord", Value: "nord"},
+				{Label: "Dracula", Value: "dracula"},
+			},
+			GetValue: func() interface{} {
+				return sp.workingCopy.theme
+			},
+			SetValue: func(v interface{}) {
+				sp.workingCopy.theme = v.(string)
+			},
+		},
+		{
+			Label: "System notifications",
+			Type:  FieldToggle,
+			GetValue: func() interface{} {
+				return sp.workingCopy.systemNotifs
+			},
+			SetValue: func(v interface{}) {
+				sp.workingCopy.systemNotifs = v.(bool)
+			},
+		},
+		{
+			Label: "TUI alerts",
+			Type:  FieldToggle,
+			GetValue: func() interface{} {
+				return sp.workingCopy.tuiAlerts
+			},
+			SetValue: func(v interface{}) {
+				sp.workingCopy.tuiAlerts = v.(bool)
+			},
+		},
+		{
+			Label: "Save",
+			Type:  FieldButton,
+		},
+		{
+			Label: "Cancel",
+			Type:  FieldButton,
+		},
+	}
+}
+
+// Show makes the settings panel visible.
 func (sp *SettingsPanel) Show() tea.Cmd {
 	sp.visible = true
-	sp.saved = false
-	sp.loadFromConfig()
-	sp.buildForm()
-	return sp.form.Init()
+	sp.selectedField = 0
+	sp.editMode = false
+	sp.loadWorkingCopy()
+	return nil
 }
 
 // Hide closes the settings panel.
@@ -101,55 +213,171 @@ func (sp *SettingsPanel) IsVisible() bool {
 	return sp.visible
 }
 
-// WasSaved returns true if settings were saved on last close.
-func (sp *SettingsPanel) WasSaved() bool {
-	return sp.saved
+// SetSize updates the panel dimensions.
+func (sp *SettingsPanel) SetSize(width, height int) {
+	sp.width = width
+	sp.height = height
 }
 
-// Form returns the huh form for Update/View integration.
-func (sp *SettingsPanel) Form() *huh.Form {
-	return sp.form
-}
-
-// Save applies form values to the config.
-func (sp *SettingsPanel) Save() {
-	sp.config.Projects.AutoDiscover = sp.autoDiscover
-	sp.config.Projects.ScanDepth = sp.scanDepth
-	sp.config.UI.Theme = sp.theme
-	sp.config.UI.DefaultLogView = sp.defaultLogView
-	sp.config.Notifications.SystemEnabled = sp.systemNotifs
-	sp.config.Notifications.TUIAlerts = sp.tuiAlerts
-	sp.saved = true
-}
-
-// Cancel discards form changes.
+// Cancel discards changes and closes the panel.
 func (sp *SettingsPanel) Cancel() {
-	sp.loadFromConfig() // Reset to original values
-	sp.saved = false
+	sp.loadWorkingCopy()
+	sp.visible = false
 }
 
-// Config returns the underlying config.
-func (sp *SettingsPanel) Config() *config.Config {
-	return sp.config
-}
-
-// Update handles messages for the settings form.
+// Update handles messages for the settings panel.
 func (sp *SettingsPanel) Update(msg tea.Msg) (*SettingsPanel, tea.Cmd) {
 	if !sp.visible {
 		return sp, nil
 	}
 
-	// Pass all messages to the form
-	model, cmd := sp.form.Update(msg)
-	sp.form = model.(*huh.Form)
-
-	// Check if form is completed
-	if sp.form.State == huh.StateCompleted {
-		sp.Save()
-		sp.visible = false
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return sp, nil
 	}
 
-	return sp, cmd
+	// Handle edit mode first (for Select fields)
+	if sp.editMode {
+		return sp.handleEditMode(keyMsg)
+	}
+
+	// Normal navigation mode
+	return sp.handleNavigationMode(keyMsg)
+}
+
+// handleNavigationMode handles keys in navigation mode.
+func (sp *SettingsPanel) handleNavigationMode(msg tea.KeyMsg) (*SettingsPanel, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if sp.selectedField > 0 {
+			sp.selectedField--
+		}
+
+	case "down", "j":
+		if sp.selectedField < len(sp.fields)-1 {
+			sp.selectedField++
+		}
+
+	case "enter":
+		return sp.handleFieldActivation()
+
+	case "esc":
+		sp.Cancel()
+		return sp, nil
+	}
+
+	return sp, nil
+}
+
+// handleEditMode handles keys in edit mode (for Select fields).
+func (sp *SettingsPanel) handleEditMode(msg tea.KeyMsg) (*SettingsPanel, tea.Cmd) {
+	field := sp.fields[sp.selectedField]
+
+	switch msg.String() {
+	case "left", "h":
+		sp.cyclePrevOption(field)
+
+	case "right", "l":
+		sp.cycleNextOption(field)
+
+	case "enter":
+		// Confirm selection and exit edit mode
+		sp.editMode = false
+
+	case "esc":
+		// Cancel edit mode (value remains unchanged)
+		sp.editMode = false
+	}
+
+	return sp, nil
+}
+
+// handleFieldActivation activates the current field.
+func (sp *SettingsPanel) handleFieldActivation() (*SettingsPanel, tea.Cmd) {
+	field := sp.fields[sp.selectedField]
+
+	switch field.Type {
+	case FieldToggle:
+		// Flip boolean immediately
+		currentValue := field.GetValue().(bool)
+		field.SetValue(!currentValue)
+
+	case FieldSelect:
+		// Enter edit mode to use Left/Right arrows
+		sp.editMode = true
+
+	case FieldButton:
+		if field.Label == "Save" {
+			return sp.handleSave()
+		} else if field.Label == "Cancel" {
+			sp.Cancel()
+		}
+	}
+
+	return sp, nil
+}
+
+// handleSave saves settings to disk.
+func (sp *SettingsPanel) handleSave() (*SettingsPanel, tea.Cmd) {
+	// Apply working copy to config
+	sp.applyWorkingCopy()
+
+	// Save to disk
+	path := config.Path()
+	err := config.Save(path, sp.config)
+
+	if err != nil {
+		// Return error as a message for toast notification
+		return sp, func() tea.Msg {
+			return settingsSaveErrorMsg{err: err}
+		}
+	}
+
+	// Success - close modal
+	sp.visible = false
+	return sp, func() tea.Msg {
+		return settingsSavedMsg{}
+	}
+}
+
+// cyclePrevOption cycles to previous option in a Select field.
+func (sp *SettingsPanel) cyclePrevOption(field SettingField) {
+	currentValue := field.GetValue()
+	currentIdx := -1
+
+	for i, opt := range field.Options {
+		if opt.Value == currentValue {
+			currentIdx = i
+			break
+		}
+	}
+
+	if currentIdx > 0 {
+		field.SetValue(field.Options[currentIdx-1].Value)
+	} else {
+		// Wrap around to last option
+		field.SetValue(field.Options[len(field.Options)-1].Value)
+	}
+}
+
+// cycleNextOption cycles to next option in a Select field.
+func (sp *SettingsPanel) cycleNextOption(field SettingField) {
+	currentValue := field.GetValue()
+	currentIdx := -1
+
+	for i, opt := range field.Options {
+		if opt.Value == currentValue {
+			currentIdx = i
+			break
+		}
+	}
+
+	if currentIdx < len(field.Options)-1 {
+		field.SetValue(field.Options[currentIdx+1].Value)
+	} else {
+		// Wrap around to first option
+		field.SetValue(field.Options[0].Value)
+	}
 }
 
 // View renders the settings panel.
@@ -157,5 +385,125 @@ func (sp *SettingsPanel) View() string {
 	if !sp.visible {
 		return ""
 	}
-	return sp.form.View()
+
+	// Build modal content
+	content := sp.renderContent()
+
+	// Fixed size modal box (60 cols x 20 rows)
+	modalStyle := sp.styles.FocusedBorder.
+		Width(60).
+		Height(20).
+		Padding(1, 2)
+
+	return modalStyle.Render(content)
+}
+
+// renderContent builds the modal content.
+func (sp *SettingsPanel) renderContent() string {
+	var lines []string
+
+	// Title (centered)
+	titleStyle := lipgloss.NewStyle().Width(56).Align(lipgloss.Center)
+	lines = append(lines, titleStyle.Render(sp.styles.Title.Render("Settings")))
+	lines = append(lines, "")
+
+	// Field list (centered)
+	fieldStyle := lipgloss.NewStyle().Width(56).Align(lipgloss.Center)
+	for i, field := range sp.fields {
+		line := sp.renderField(i, field)
+		lines = append(lines, fieldStyle.Render(line))
+	}
+
+	// Help text at bottom (centered)
+	lines = append(lines, "")
+	helpStyle := lipgloss.NewStyle().Width(56).Align(lipgloss.Center)
+	lines = append(lines, helpStyle.Render(sp.styles.Breadcrumb.Render(sp.getHelpText())))
+
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// renderField renders a single field.
+func (sp *SettingsPanel) renderField(idx int, field SettingField) string {
+	cursor := "  "
+	if idx == sp.selectedField {
+		cursor = "> "
+	}
+
+	var valueDisplay string
+	switch field.Type {
+	case FieldToggle:
+		value := field.GetValue().(bool)
+		if value {
+			valueDisplay = sp.styles.StatusRunning.Render("[ON]")
+		} else {
+			valueDisplay = sp.styles.StatusIdle.Render("[OFF]")
+		}
+
+	case FieldSelect:
+		value := field.GetValue()
+		// Find matching option label
+		for _, opt := range field.Options {
+			if opt.Value == value {
+				if sp.editMode && idx == sp.selectedField {
+					// Show all options with current highlighted
+					valueDisplay = sp.renderSelectOptions(field, value)
+				} else {
+					valueDisplay = sp.styles.Breadcrumb.Render(fmt.Sprintf("<%s>", opt.Label))
+				}
+				break
+			}
+		}
+
+	case FieldButton:
+		// For buttons, center the label
+		buttonLabel := fmt.Sprintf("[%s]", field.Label)
+		if idx == sp.selectedField {
+			buttonLabel = sp.styles.SelectedItem.Render(buttonLabel)
+		}
+		return buttonLabel
+	}
+
+	// Calculate spacing for alignment
+	// Total width: 52 chars (56 - 4 for cursor/padding)
+	// Label gets left side, value gets right side
+
+	// Calculate padding based on plain text lengths
+	valueWidth := lipgloss.Width(valueDisplay)
+	padding := 52 - len(cursor) - len(field.Label) - valueWidth
+	if padding < 1 {
+		padding = 1
+	}
+
+	// Apply styling if selected
+	label := field.Label
+	if idx == sp.selectedField && field.Type != FieldButton {
+		label = sp.styles.SelectedItem.Render(label)
+	}
+
+	// Build the line: cursor + label + padding + value
+	line := fmt.Sprintf("%s%s%s%s", cursor, label, strings.Repeat(" ", padding), valueDisplay)
+
+	return line
+}
+
+// renderSelectOptions renders inline options for Select field in edit mode.
+func (sp *SettingsPanel) renderSelectOptions(field SettingField, currentValue interface{}) string {
+	// Display inline options: "1 [2] 3 4 5" with current in brackets
+	var parts []string
+	for _, opt := range field.Options {
+		if opt.Value == currentValue {
+			parts = append(parts, sp.styles.SelectedItem.Render(fmt.Sprintf("[%s]", opt.Label)))
+		} else {
+			parts = append(parts, opt.Label)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// getHelpText returns context-sensitive help text.
+func (sp *SettingsPanel) getHelpText() string {
+	if sp.editMode {
+		return "←/→ Change  [Enter] Confirm  [Esc] Cancel"
+	}
+	return "↑/↓ Navigate  [Enter] Select  [Esc] Cancel"
 }

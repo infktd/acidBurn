@@ -22,8 +22,13 @@ type Registry struct {
 func Path() string {
 	configHome := os.Getenv("XDG_CONFIG_HOME")
 	if configHome == "" {
-		home, _ := os.UserHomeDir()
-		configHome = filepath.Join(home, ".config")
+		home, err := os.UserHomeDir()
+		if err != nil {
+			// Fallback to current directory if home can't be determined
+			configHome = ".config"
+		} else {
+			configHome = filepath.Join(home, ".config")
+		}
 	}
 	return filepath.Join(configHome, registryDir, registryFile)
 }
