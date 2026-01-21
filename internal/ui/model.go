@@ -140,6 +140,10 @@ type Model struct {
 	serviceStates       map[string]string    // Last known state per service
 	stateChangeTime     map[string]time.Time // When state last changed
 	stateFlashIntensity map[string]float64   // Flash intensity (1.0 = bright, 0.0 = normal)
+
+	// Track resource usage history for sparklines
+	cpuHistory map[string][]float64 // Last 10 CPU readings per service
+	memHistory map[string][]int64   // Last 10 memory readings per service
 }
 
 // Messages for async operations
@@ -202,8 +206,8 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 		{Title: "ACTIVITY", Width: 8},
 		{Title: "SERVICE", Width: 20},
 		{Title: "PID", Width: 8},
-		{Title: "CPU", Width: 8},
-		{Title: "MEM", Width: 10},
+		{Title: "CPU", Width: 18}, // Increased for sparkline (value + sparkline)
+		{Title: "MEM", Width: 20}, // Increased for sparkline (value + sparkline)
 		{Title: "EXIT", Width: 6},
 	}
 	t := table.New(
@@ -262,6 +266,8 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 		serviceStates:       make(map[string]string),
 		stateChangeTime:     make(map[string]time.Time),
 		stateFlashIntensity: make(map[string]float64),
+		cpuHistory:          make(map[string][]float64),
+		memHistory:          make(map[string][]int64),
 	}
 
 	// Show splash on startup
@@ -606,6 +612,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.stateFlashIntensity[svc.Name] = 1.0 // Start at maximum brightness
 				}
 				m.serviceStates[svc.Name] = currentState
+
+				// Record CPU and memory history for sparklines (keep last 10 readings)
+				if svc.IsRunning {
+					// Update CPU history
+					cpuHist := m.cpuHistory[svc.Name]
+					cpuHist = append(cpuHist, svc.CPU)
+					if len(cpuHist) > 10 {
+						cpuHist = cpuHist[len(cpuHist)-10:] // Keep only last 10
+					}
+					m.cpuHistory[svc.Name] = cpuHist
+
+					// Update memory history
+					memHist := m.memHistory[svc.Name]
+					memHist = append(memHist, svc.Mem)
+					if len(memHist) > 10 {
+						memHist = memHist[len(memHist)-10:] // Keep only last 10
+					}
+					m.memHistory[svc.Name] = memHist
+				}
 			}
 
 			// Clamp selected service
@@ -1024,11 +1049,13 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focused = PaneServices
 		m.selectedService = 0
 		m.services = nil // Clear services, will be repopulated
-		m.lastLogMsg = make(map[string]string)          // Reset log tracking for new project
-		m.logActivity = make(map[string]time.Time)      // Reset log activity tracking
-		m.serviceStates = make(map[string]string)       // Reset state tracking
-		m.stateChangeTime = make(map[string]time.Time)  // Reset state change times
+		m.lastLogMsg = make(map[string]string)           // Reset log tracking for new project
+		m.logActivity = make(map[string]time.Time)       // Reset log activity tracking
+		m.serviceStates = make(map[string]string)        // Reset state tracking
+		m.stateChangeTime = make(map[string]time.Time)   // Reset state change times
 		m.stateFlashIntensity = make(map[string]float64) // Reset flash intensity
+		m.cpuHistory = make(map[string][]float64)        // Reset CPU history
+		m.memHistory = make(map[string][]int64)          // Reset memory history
 		m.logView.SetService("")                         // Clear service filter
 		m.logView.buffer.Clear()                         // Clear old logs
 		return m, m.pollServicesCmd()
@@ -1830,11 +1857,21 @@ func (m *Model) updateServicesTable() {
 		cpu := "-"
 		if svc.IsRunning && svc.CPU > 0 {
 			cpu = fmt.Sprintf("%.1f%%", svc.CPU)
+			// Add sparkline if we have history
+			if cpuHist, exists := m.cpuHistory[svc.Name]; exists && len(cpuHist) >= 3 {
+				sparkline := renderSparkline(cpuHist)
+				cpu = fmt.Sprintf("%5s %s", cpu, sparkline)
+			}
 		}
 
 		mem := "-"
 		if svc.IsRunning && svc.Mem > 0 {
 			mem = formatBytes(svc.Mem)
+			// Add sparkline if we have history
+			if memHist, exists := m.memHistory[svc.Name]; exists && len(memHist) >= 3 {
+				sparkline := renderMemorySparkline(memHist)
+				mem = fmt.Sprintf("%6s %s", mem, sparkline)
+			}
 		}
 
 		exit := "-"
@@ -1898,6 +1935,66 @@ func (m *Model) getActivityIndicator(serviceName string) string {
 	}
 
 	return " " // Activity too old, show nothing
+}
+
+// renderSparkline generates a sparkline from a slice of values using Unicode block characters.
+// Returns a string like "▁▂▃▄▅▆▇█" representing the trend.
+func renderSparkline(values []float64) string {
+	if len(values) == 0 {
+		return ""
+	}
+
+	// Unicode block characters from empty to full
+	blocks := []rune{'▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
+
+	// Find min and max for normalization
+	min, max := values[0], values[0]
+	for _, v := range values {
+		if v < min {
+			min = v
+		}
+		if v > max {
+			max = v
+		}
+	}
+
+	// Avoid division by zero
+	if max == min {
+		// All values the same, use mid-level block
+		result := make([]rune, len(values))
+		for i := range result {
+			result[i] = blocks[3]
+		}
+		return string(result)
+	}
+
+	// Normalize and map to blocks
+	result := make([]rune, len(values))
+	for i, v := range values {
+		normalized := (v - min) / (max - min) // 0.0 to 1.0
+		blockIndex := int(normalized * float64(len(blocks)-1))
+		if blockIndex >= len(blocks) {
+			blockIndex = len(blocks) - 1
+		}
+		result[i] = blocks[blockIndex]
+	}
+
+	return string(result)
+}
+
+// renderMemorySparkline generates a sparkline from memory values (int64).
+func renderMemorySparkline(values []int64) string {
+	if len(values) == 0 {
+		return ""
+	}
+
+	// Convert to float64 for rendering
+	floatValues := make([]float64, len(values))
+	for i, v := range values {
+		floatValues[i] = float64(v)
+	}
+
+	return renderSparkline(floatValues)
 }
 
 // renderSectionTitle renders a section title in code comment style with separator line.
