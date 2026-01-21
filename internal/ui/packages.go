@@ -9,11 +9,12 @@ import (
 
 // PackagesView displays installed packages for a project.
 type PackagesView struct {
-	styles   *Styles
-	packages []packages.Package
-	width    int
-	height   int
-	focused  bool
+	styles      *Styles
+	packages    []packages.Package
+	width       int
+	height      int
+	focused     bool
+	titleSuffix string // Optional suffix to append to title (e.g., "[p:services]")
 }
 
 // NewPackagesView creates a new packages view.
@@ -42,6 +43,11 @@ func (pv *PackagesView) SetFocused(focused bool) {
 	pv.focused = focused
 }
 
+// SetTitleSuffix sets an optional suffix to append to the title.
+func (pv *PackagesView) SetTitleSuffix(suffix string) {
+	pv.titleSuffix = suffix
+}
+
 // View renders the packages view.
 func (pv *PackagesView) View() string {
 	if pv.width == 0 || pv.height == 0 {
@@ -50,6 +56,9 @@ func (pv *PackagesView) View() string {
 
 	// Header with focus styling
 	title := fmt.Sprintf("PACKAGES (%d)", len(pv.packages))
+	if pv.titleSuffix != "" {
+		title += " " + pv.titleSuffix
+	}
 	var headerStyle lipgloss.Style
 	if pv.focused {
 		headerStyle = lipgloss.NewStyle().

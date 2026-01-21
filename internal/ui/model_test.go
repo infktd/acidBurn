@@ -550,3 +550,26 @@ func TestView_WideTerminal_ShowsBothPanes(t *testing.T) {
 		t.Error("wide terminal view should contain PACKAGES")
 	}
 }
+
+func TestView_NarrowTerminal_ShowsIndicator(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 100
+	m.height = 40
+	m.showSplash = false
+
+	// Showing services - should have packages indicator
+	m.showPackages = false
+	view := m.View()
+	if !strings.Contains(view, "[p:packages]") {
+		t.Error("narrow terminal showing services should contain '[p:packages]' indicator")
+	}
+
+	// Showing packages - should have services indicator
+	m.showPackages = true
+	view = m.View()
+	if !strings.Contains(view, "[p:services]") {
+		t.Error("narrow terminal showing packages should contain '[p:services]' indicator")
+	}
+}

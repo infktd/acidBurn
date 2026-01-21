@@ -2055,8 +2055,11 @@ func (m *Model) renderServices(width, height int) string {
 	var content string
 
 	if p := m.currentProject(); p != nil {
-		// Title with focus indicator
+		// Title with focus indicator and toggle hint on narrow terminals
 		title := fmt.Sprintf("SERVICES [%s]", p.Name)
+		if !m.shouldShowBothPanes() {
+			title += " [p:packages]"
+		}
 		content = m.renderSectionTitle(title, m.focused == PaneServices, width-4) + "\n"
 
 		if len(m.services) == 0 {
@@ -2087,7 +2090,11 @@ func (m *Model) renderServices(width, height int) string {
 			content += m.servicesTable.View()
 		}
 	} else {
-		content = m.renderSectionTitle("SERVICES", m.focused == PaneServices, width-4) + "\n"
+		title := "SERVICES"
+		if !m.shouldShowBothPanes() {
+			title += " [p:packages]"
+		}
+		content = m.renderSectionTitle(title, m.focused == PaneServices, width-4) + "\n"
 		emptyStateHeight := height - 8
 		emptyContent := m.renderEmptyState(
 			"No Project Selected",
@@ -2115,6 +2122,13 @@ func (m *Model) renderPackages(width, height int) string {
 	// Update packagesView size and focus state
 	m.packagesView.SetSize(width-4, height-4)
 	m.packagesView.SetFocused(m.focused == PanePackages)
+
+	// Add toggle indicator on narrow terminals
+	if !m.shouldShowBothPanes() {
+		m.packagesView.SetTitleSuffix("[p:services]")
+	} else {
+		m.packagesView.SetTitleSuffix("")
+	}
 
 	// Get packages view content
 	packagesContent := m.packagesView.View()
