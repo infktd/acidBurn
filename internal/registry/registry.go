@@ -86,3 +86,24 @@ func (r *Registry) FindByPath(path string) *Project {
 	}
 	return nil
 }
+
+// RemoveProject removes a project from the registry.
+func (r *Registry) RemoveProject(path string) bool {
+	for i, p := range r.Projects {
+		if p.Path == path {
+			r.Projects = append(r.Projects[:i], r.Projects[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// ToggleHidden toggles the hidden state of a project.
+func (r *Registry) ToggleHidden(path string) bool {
+	p := r.FindByPath(path)
+	if p != nil {
+		p.Hidden = !p.Hidden
+		return true
+	}
+	return false
+}

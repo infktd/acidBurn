@@ -5,12 +5,13 @@ import "github.com/charmbracelet/bubbles/key"
 // KeyMap defines all keybindings.
 type KeyMap struct {
 	// Global
-	Quit     key.Binding
-	Shutdown key.Binding
-	Settings key.Binding
-	Help     key.Binding
-	Refresh  key.Binding
-	History  key.Binding
+	Quit       key.Binding
+	Shutdown   key.Binding
+	Settings   key.Binding
+	EditConfig key.Binding
+	Help       key.Binding
+	Refresh    key.Binding
+	History    key.Binding
 
 	// Navigation
 	Up     key.Binding
@@ -26,6 +27,13 @@ type KeyMap struct {
 	Stop    key.Binding
 	Restart key.Binding
 	Search  key.Binding
+
+	// Project Management
+	Hide   key.Binding
+	Delete key.Binding
+	Edit   key.Binding
+	Move   key.Binding
+	Repair key.Binding
 
 	// Logs
 	Follow    key.Binding
@@ -54,6 +62,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("S"),
 			key.WithHelp("S", "settings"),
 		),
+		EditConfig: key.NewBinding(
+			key.WithKeys("E"),
+			key.WithHelp("E", "edit config"),
+		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
 			key.WithHelp("?", "help"),
@@ -64,7 +76,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		History: key.NewBinding(
 			key.WithKeys("H"),
-			key.WithHelp("H", "alert history"),
+			key.WithHelp("H", "alerts"),
 		),
 
 		// Navigation
@@ -113,6 +125,28 @@ func DefaultKeyMap() KeyMap {
 		Search: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "search"),
+		),
+
+		// Project Management
+		Hide: key.NewBinding(
+			key.WithKeys("ctrl+h"),
+			key.WithHelp("ctrl+h", "hide/show"),
+		),
+		Delete: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "delete"),
+		),
+		Edit: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "rename"),
+		),
+		Move: key.NewBinding(
+			key.WithKeys("m"),
+			key.WithHelp("m", "relocate"),
+		),
+		Repair: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "repair stale"),
 		),
 
 		// Logs

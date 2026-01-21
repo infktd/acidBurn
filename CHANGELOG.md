@@ -4,6 +4,38 @@ All notable changes to acidBurn will be documented in this file.
 
 This project uses [0ver](https://0ver.org/) versioning.
 
+## [0.1.1] - 2026-01-21
+
+### Added
+- 10 new themes with light/dark variants:
+  - Catppuccin family: Mocha, Macchiato, Frappé, Latte (light)
+  - Tokyo Night family: Night, Storm, Day (light)
+  - Gruvbox family: Dark, Light
+- All themes available in settings panel theme selector
+- ConfirmDialog component for user confirmations (50x10 centered modal)
+  - Yes/No buttons with keyboard navigation (←/→, Tab)
+  - Quick y/n shortcuts
+  - Defaults to "No" for safety
+- `Registry.RemoveProject()` for deleting projects from registry
+- `Registry.ToggleHidden()` for hiding/showing projects
+- `Project.Repair()` for cleaning up stale socket files
+
+### Changed
+- Help modal now renders as centered modal (80x28) instead of full-screen overlay
+- Alerts now display in centered modal (80x28) instead of full-screen page
+- Splash screen loading bar now animates smoothly from 0% to 100% over ~500ms
+- Keybind brackets in help modal and footer now use theme accent colors
+- Help keybinding label changed from "Alert history" to "Alerts"
+
+### Technical
+- Created `HelpPanel` component for modular help rendering
+- Created `AlertsPanel` component for modular alerts rendering
+- Created `ConfirmDialog` component following centered overlay pattern
+- Removed `huh` dependency from settings implementation (now custom component)
+- Help and alerts modals follow same centered overlay pattern as settings
+- Registry methods for project lifecycle management
+- Stale project repair removes entire `.devenv/run` directory
+
 ## [0.1.0] - 2026-01-20
 
 ### Added
@@ -85,4 +117,5 @@ This project uses [0ver](https://0ver.org/) versioning.
 
 | Version | Date | Summary |
 |---------|------|---------|
+| 0.1.1 | 2026-01-21 | UI polish: centered modals, theme expansion, animations |
 | 0.1.0 | 2026-01-20 | Initial release |
