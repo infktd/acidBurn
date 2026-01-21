@@ -213,8 +213,36 @@ func Scan(projectPath string) ([]Package, error) {
 }
 
 // groupByPackage groups binaries from the same Nix package.
-// Binaries with the same hash+name+version belong to the same package.
+// Binaries with the same hash+version belong to the same package.
 func groupByPackage(binaries []binaryInfo) []Package {
-	// Stub for now - will be implemented in Task 5
-	return []Package{}
+	// Use map to group by package identifier (hash-version)
+	// Same hash+version = same Nix package, even if binary names differ
+	packageMap := make(map[string]*Package)
+
+	for _, bin := range binaries {
+		// Create unique package identifier based on hash and version only
+		// This groups go, gofmt, godoc etc. from the same Go installation
+		pkgID := bin.hash + "-" + bin.version
+
+		if _, exists := packageMap[pkgID]; exists {
+			// Package already seen, skip this binary
+			continue
+		}
+
+		// New package - use the binary name as the package name
+		packageMap[pkgID] = &Package{
+			Name:    bin.name,
+			Version: bin.version,
+			Type:    categorizePackage(bin.name),
+			Binary:  bin.path,
+		}
+	}
+
+	// Convert map to slice
+	packages := make([]Package, 0, len(packageMap))
+	for _, pkg := range packageMap {
+		packages = append(packages, *pkg)
+	}
+
+	return packages
 }
