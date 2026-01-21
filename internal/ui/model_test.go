@@ -576,6 +576,33 @@ func TestView_NarrowTerminal_ShowsIndicator(t *testing.T) {
 	}
 }
 
+func TestMouse_HoverPackagesPane(t *testing.T) {
+	cfg := config.Default()
+	cfg.UI.SidebarWidth = 30
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 150
+	m.height = 60
+	m.showSplash = false
+
+	// Mouse in packages area (x >= 30, y in packages region)
+	// Services roughly at top quarter, packages at second quarter
+	packagesY := 20 // In packages region
+
+	msg := tea.MouseMsg{
+		Type: tea.MouseMotion,
+		X:    50,
+		Y:    packagesY,
+	}
+
+	newModel, _ := m.Update(msg)
+	model := newModel.(*Model)
+
+	if model.focused != PanePackages {
+		t.Errorf("expected focus on packages, got %v", model.focused)
+	}
+}
+
 func TestPackagesPaneIntegration(t *testing.T) {
 	// Create test project directory with packages
 	tmpDir := t.TempDir()
