@@ -3,21 +3,21 @@
     let
       vars = {
   version = "1.11.2";
-  system = "x86_64-linux";
-  devenv_root = "/home/infktd/coding/acidBurn";
-  project_input_ref = "path:/home/infktd/coding/acidBurn";
-  devenv_dotfile = "/home/infktd/coding/acidBurn/.devenv";
+  system = "aarch64-darwin";
+  devenv_root = "/Users/jayne/Desktop/codingProjects/acidBurn";
+  project_input_ref = "path:/Users/jayne/Desktop/codingProjects/acidBurn";
+  devenv_dotfile = "/Users/jayne/Desktop/codingProjects/acidBurn/.devenv";
   devenv_dotfile_path = ./.devenv;
-  devenv_tmpdir = "/run/user/1000";
-  devenv_runtime = "/run/user/1000/devenv-be452f1";
+  devenv_tmpdir = "/var/folders/6h/4fkfm44n4j3cfnjjc_5q5fr80000gn/T/";
+  devenv_runtime = "/var/folders/6h/4fkfm44n4j3cfnjjc_5q5fr80000gn/T/devenv-6a14526";
   devenv_istesting = false;
   devenv_direnvrc_latest_version = 1;
   container_name = null;
   active_profiles = [
   ];
-  hostname = "arasaka";
-  username = "infktd";
-  git_root = "/home/infktd/coding/acidBurn";
+  hostname = "esoteric";
+  username = "jayne";
+  git_root = "/Users/jayne/Desktop/codingProjects/acidBurn";
   secretspec = null;
 };
     in
@@ -40,21 +40,21 @@
     let
       vars = {
   version = "1.11.2";
-  system = "x86_64-linux";
-  devenv_root = "/home/infktd/coding/acidBurn";
-  project_input_ref = "path:/home/infktd/coding/acidBurn";
-  devenv_dotfile = "/home/infktd/coding/acidBurn/.devenv";
+  system = "aarch64-darwin";
+  devenv_root = "/Users/jayne/Desktop/codingProjects/acidBurn";
+  project_input_ref = "path:/Users/jayne/Desktop/codingProjects/acidBurn";
+  devenv_dotfile = "/Users/jayne/Desktop/codingProjects/acidBurn/.devenv";
   devenv_dotfile_path = ./.devenv;
-  devenv_tmpdir = "/run/user/1000";
-  devenv_runtime = "/run/user/1000/devenv-be452f1";
+  devenv_tmpdir = "/var/folders/6h/4fkfm44n4j3cfnjjc_5q5fr80000gn/T/";
+  devenv_runtime = "/var/folders/6h/4fkfm44n4j3cfnjjc_5q5fr80000gn/T/devenv-6a14526";
   devenv_istesting = false;
   devenv_direnvrc_latest_version = 1;
   container_name = null;
   active_profiles = [
   ];
-  hostname = "arasaka";
-  username = "infktd";
-  git_root = "/home/infktd/coding/acidBurn";
+  hostname = "esoteric";
+  username = "jayne";
+  git_root = "/Users/jayne/Desktop/codingProjects/acidBurn";
   secretspec = null;
 };
       devenv =
