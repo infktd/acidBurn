@@ -3,12 +3,12 @@ package ui
 import (
 	"testing"
 
-	"github.com/infktd/acidburn/internal/config"
+	"github.com/infktd/devdash/internal/config"
 )
 
 func TestSettingsPanelCreate(t *testing.T) {
 	cfg := config.Default()
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	styles := NewStyles(theme)
 	sp := NewSettingsPanel(cfg, styles, 80, 24)
 
@@ -25,7 +25,7 @@ func TestSettingsPanelCreate(t *testing.T) {
 
 func TestSettingsPanelShowHide(t *testing.T) {
 	cfg := config.Default()
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	styles := NewStyles(theme)
 	sp := NewSettingsPanel(cfg, styles, 80, 24)
 
@@ -43,7 +43,7 @@ func TestSettingsPanelShowHide(t *testing.T) {
 func TestSettingsPanelWorkingCopy(t *testing.T) {
 	cfg := config.Default()
 	originalTheme := cfg.UI.Theme
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	styles := NewStyles(theme)
 	sp := NewSettingsPanel(cfg, styles, 80, 24)
 
@@ -78,7 +78,7 @@ func TestSettingsPanelWorkingCopy(t *testing.T) {
 func TestSettingsPanelCancel(t *testing.T) {
 	cfg := config.Default()
 	originalTheme := cfg.UI.Theme
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	styles := NewStyles(theme)
 	sp := NewSettingsPanel(cfg, styles, 80, 24)
 	sp.Show()
@@ -99,7 +99,7 @@ func TestSettingsPanelCancel(t *testing.T) {
 
 func TestSettingsPanelFieldTypes(t *testing.T) {
 	cfg := config.Default()
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	styles := NewStyles(theme)
 	sp := NewSettingsPanel(cfg, styles, 80, 24)
 
@@ -124,7 +124,7 @@ func TestSettingsPanelFieldTypes(t *testing.T) {
 
 func TestSettingsPanelNavigation(t *testing.T) {
 	cfg := config.Default()
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	styles := NewStyles(theme)
 	sp := NewSettingsPanel(cfg, styles, 80, 24)
 	sp.Show()
@@ -142,7 +142,7 @@ func TestSettingsPanelNavigation(t *testing.T) {
 
 func TestSettingsPanelView(t *testing.T) {
 	cfg := config.Default()
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	styles := NewStyles(theme)
 	sp := NewSettingsPanel(cfg, styles, 80, 24)
 

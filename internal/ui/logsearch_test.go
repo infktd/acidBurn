@@ -6,7 +6,7 @@ import (
 )
 
 func TestLogViewSearch(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	lv := NewLogView(styles, 80, 24)
 
 	// Add some entries
@@ -27,7 +27,7 @@ func TestLogViewSearch(t *testing.T) {
 }
 
 func TestLogViewSearchCaseInsensitive(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	lv := NewLogView(styles, 80, 24)
 
 	lv.AddEntry(LogEntry{Timestamp: time.Now(), Service: "api", Level: LevelInfo, Message: "ERROR happened"})
@@ -41,7 +41,7 @@ func TestLogViewSearchCaseInsensitive(t *testing.T) {
 }
 
 func TestLogViewNextPrevMatch(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	lv := NewLogView(styles, 80, 24)
 
 	lv.AddEntry(LogEntry{Timestamp: time.Now(), Service: "a", Level: LevelInfo, Message: "match one"})
@@ -83,7 +83,7 @@ func TestLogViewNextPrevMatch(t *testing.T) {
 }
 
 func TestLogViewFilterMode(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	lv := NewLogView(styles, 80, 24)
 
 	lv.AddEntry(LogEntry{Timestamp: time.Now(), Service: "a", Level: LevelInfo, Message: "match"})
@@ -106,7 +106,7 @@ func TestLogViewFilterMode(t *testing.T) {
 }
 
 func TestLogViewClearSearch(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	lv := NewLogView(styles, 80, 24)
 
 	lv.AddEntry(LogEntry{Timestamp: time.Now(), Service: "a", Level: LevelInfo, Message: "test"})

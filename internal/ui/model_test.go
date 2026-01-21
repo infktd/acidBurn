@@ -5,8 +5,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/infktd/acidburn/internal/config"
-	"github.com/infktd/acidburn/internal/registry"
+	"github.com/infktd/devdash/internal/config"
+	"github.com/infktd/devdash/internal/registry"
 )
 
 func TestModelImplementsTeaModel(t *testing.T) {
@@ -206,7 +206,7 @@ func TestModelShowsAlertHistory(t *testing.T) {
 	m.width = 100
 	m.height = 40
 	m.showSplash = false
-	m.showAlerts = true
+	m.alertsPanel.Show()
 
 	view := m.View()
 	if view == "" {

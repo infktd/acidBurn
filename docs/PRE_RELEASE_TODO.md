@@ -1,4 +1,4 @@
-# acidBurn Pre-Release TODO - v0.1.3
+# devdash Pre-Release TODO - v0.1.3
 
 **Target Release:** This Weekend (2026-01-25/26)
 **Status:** In Progress
@@ -257,13 +257,13 @@ When ready to release:
    ```bash
    # Clean build
    go clean
-   go build -o acidburn .
+   go build -o devdash .
 
    # Run tests
    go test ./...
 
    # Verify version
-   ./acidburn --version  # if version flag exists
+   ./devdash --version  # if version flag exists
    ```
 
 2. **Update CHANGELOG**

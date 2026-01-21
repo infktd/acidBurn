@@ -1,11 +1,11 @@
 package ui
 
 import (
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lucasb-eyer/go-colorful"
 )
 
 // ToastLevel represents the severity of a toast notification.
@@ -33,6 +33,7 @@ type ToastManager struct {
 	width     int
 	visible   bool
 	dismissed bool
+	opacity   float64 // 0.0 to 1.0 for fade-in animation
 }
 
 // NewToastManager creates a toast manager.
@@ -53,6 +54,7 @@ func (tm *ToastManager) Show(msg string, level ToastLevel, duration time.Duratio
 	}
 	tm.visible = true
 	tm.dismissed = false
+	tm.opacity = 0.0 // Start invisible for fade-in
 }
 
 // Dismiss hides the current toast.
@@ -79,61 +81,64 @@ func (tm *ToastManager) View() string {
 
 	toast := tm.current
 
-	// Get icon and border color based on level
+	// Get icon and color based on level
 	var icon string
-	var borderColor lipgloss.Color
+	var color lipgloss.Color
 
-	theme := GetTheme("acid-green") // Default theme for colors
 	if tm.styles != nil {
-		// Use theme colors from styles
 		switch toast.Level {
 		case ToastInfo:
 			icon = "ℹ"
-			borderColor = lipgloss.Color("#88C0D0") // Blue
+			color = lipgloss.Color("#88C0D0") // Blue
 		case ToastSuccess:
 			icon = "✓"
-			borderColor = lipgloss.Color("#00FF41") // Green
+			color = lipgloss.Color("#00FF41") // Green
 		case ToastWarn:
 			icon = "⚠"
-			borderColor = lipgloss.Color("#FFD700") // Yellow
+			color = lipgloss.Color("#FFD700") // Yellow
 		case ToastError:
 			icon = "✗"
-			borderColor = lipgloss.Color("#FF4136") // Red
+			color = lipgloss.Color("#FF4136") // Red
 		default:
 			icon = "ℹ"
-			borderColor = theme.Primary
+			color = tm.styles.theme.Primary
 		}
 	}
 
-	// Calculate content width (accounting for border and padding)
-	contentWidth := tm.width - 4 // 2 for borders, 2 for padding
-
-	// Build the message content
-	dismissHint := "[x] dismiss"
-	messageSpace := contentWidth - len(icon) - 2 - len(dismissHint) - 2 // icon + space + dismiss + spaces
+	// Dynamic width based on terminal, leaving room for other UI elements
+	// Use 70% of terminal width, with min 60 and max 120
+	maxWidth := tm.width * 70 / 100
+	if maxWidth < 60 {
+		maxWidth = 60
+	}
+	if maxWidth > 120 {
+		maxWidth = 120
+	}
+	messageSpace := maxWidth - len(icon) - 2 // icon + space
 
 	message := toast.Message
 	if len(message) > messageSpace {
 		message = message[:messageSpace-3] + "..."
 	}
 
-	// Pad message to fill space
-	padding := messageSpace - len(message)
-	if padding < 0 {
-		padding = 0
+	content := icon + " " + message
+
+	// Apply fade-in effect by blending color with background
+	finalColor := color
+	if tm.opacity < 1.0 {
+		// Blend from dark gray to target color
+		bgColor, _ := colorful.Hex("#1a1a1a")
+		targetColor, _ := colorful.Hex(string(color))
+		blended := bgColor.BlendLuv(targetColor, tm.opacity)
+		finalColor = lipgloss.Color(blended.Hex())
 	}
-	paddedMessage := message + strings.Repeat(" ", padding)
 
-	content := icon + " " + paddedMessage + "  " + dismissHint
+	// Simple inline style with color
+	style := lipgloss.NewStyle().
+		Foreground(finalColor).
+		Bold(true)
 
-	// Create the styled box
-	boxStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(0, 1).
-		Width(tm.width)
-
-	return boxStyle.Render(content)
+	return style.Render(content)
 }
 
 // ToastTickMsg is a tick message for auto-dismiss.
@@ -150,11 +155,30 @@ func (tm *ToastManager) TickCmd() tea.Cmd {
 func (tm *ToastManager) Update(msg tea.Msg) (*ToastManager, tea.Cmd) {
 	switch msg.(type) {
 	case ToastTickMsg:
-		if tm.IsVisible() && tm.current != nil && tm.current.Duration > 0 {
-			if time.Since(tm.current.CreatedAt) > tm.current.Duration {
+		if tm.IsVisible() && tm.current != nil {
+			elapsed := time.Since(tm.current.CreatedAt)
+
+			fadeInDuration := 1000 * time.Millisecond   // 1 second fade-in
+			visibleDuration := 3000 * time.Millisecond  // 3 seconds fully visible
+			fadeOutDuration := 1000 * time.Millisecond  // 1 second fade-out
+			totalDuration := fadeInDuration + visibleDuration + fadeOutDuration
+
+			if elapsed < fadeInDuration {
+				// Fade-in phase: 0 -> 1
+				tm.opacity = float64(elapsed) / float64(fadeInDuration)
+			} else if elapsed < fadeInDuration+visibleDuration {
+				// Fully visible phase
+				tm.opacity = 1.0
+			} else if elapsed < totalDuration {
+				// Fade-out phase: 1 -> 0
+				fadeOutElapsed := elapsed - (fadeInDuration + visibleDuration)
+				tm.opacity = 1.0 - (float64(fadeOutElapsed) / float64(fadeOutDuration))
+			} else {
+				// Animation complete, dismiss
 				tm.Dismiss()
 				return tm, nil
 			}
+
 			// Keep ticking
 			return tm, tm.TickCmd()
 		}

@@ -1,10 +1,10 @@
-# acidBurn Implementation Plan
+# devdash Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Build a polished TUI command center for managing devenv.sh environments across macOS and Linux.
 
-**Architecture:** acidBurn acts as a control plane over process-compose daemons. It discovers projects by scanning for `devenv.nix` files, maintains a persistent registry, and provides a 3-pane "cockpit" UI with real-time service stats, logs, and alerts.
+**Architecture:** devdash acts as a control plane over process-compose daemons. It discovers projects by scanning for `devenv.nix` files, maintains a persistent registry, and provides a 3-pane "cockpit" UI with real-time service stats, logs, and alerts.
 
 **Tech Stack:** Go 1.21+, Bubble Tea, Lipgloss, Bubbles (viewport, list, key), Huh (forms), beeep (notifications), gopkg.in/yaml.v3
 
@@ -22,7 +22,7 @@
 
 Run:
 ```bash
-cd /home/infktd/coding/acidBurn && go mod init github.com/infktd/acidburn
+cd /home/infktd/coding/devdash && go mod init github.com/infktd/devdash
 ```
 
 Expected: `go.mod` created with module name
@@ -36,19 +36,19 @@ package main
 import "fmt"
 
 func main() {
-	fmt.Println("acidBurn")
+	fmt.Println("devdash")
 }
 ```
 
 **Step 3: Verify it compiles**
 
-Run: `go build -o acidburn .`
-Expected: Binary `acidburn` created
+Run: `go build -o devdash .`
+Expected: Binary `devdash` created
 
 **Step 4: Run it**
 
-Run: `./acidburn`
-Expected: Outputs "acidBurn"
+Run: `./devdash`
+Expected: Outputs "devdash"
 
 **Step 5: Commit**
 
@@ -99,13 +99,13 @@ var _ = tea.Quit
 var _ = lipgloss.Color("")
 
 func main() {
-	fmt.Println("acidBurn - dependencies loaded")
+	fmt.Println("devdash - dependencies loaded")
 }
 ```
 
 **Step 4: Build to verify**
 
-Run: `go build -o acidburn .`
+Run: `go build -o devdash .`
 Expected: Compiles without errors
 
 **Step 5: Commit**
@@ -136,7 +136,7 @@ mkdir -p internal/config internal/registry internal/ui internal/compose internal
 
 Create `internal/config/config.go`:
 ```go
-// Package config handles acidBurn configuration loading and persistence.
+// Package config handles devdash configuration loading and persistence.
 package config
 ```
 
@@ -235,13 +235,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Model is the main application model for acidBurn.
+// Model is the main application model for devdash.
 type Model struct {
 	width  int
 	height int
 }
 
-// New creates a new acidBurn model.
+// New creates a new devdash model.
 func New() *Model {
 	return &Model{}
 }
@@ -267,7 +267,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the model.
 func (m *Model) View() string {
-	return "acidBurn - Press q to quit"
+	return "devdash - Press q to quit"
 }
 ```
 
@@ -288,7 +288,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/infktd/acidburn/internal/ui"
+	"github.com/infktd/devdash/internal/ui"
 )
 
 func main() {
@@ -302,8 +302,8 @@ func main() {
 
 **Step 6: Build and run manually**
 
-Run: `go build -o acidburn . && ./acidburn`
-Expected: Shows "acidBurn - Press q to quit", exits on 'q'
+Run: `go build -o devdash . && ./devdash`
+Expected: Shows "devdash - Press q to quit", exits on 'q'
 
 **Step 7: Commit**
 
@@ -373,7 +373,7 @@ import (
 	"path/filepath"
 )
 
-// Config represents the acidBurn configuration.
+// Config represents the devdash configuration.
 type Config struct {
 	Projects      ProjectsConfig      `yaml:"projects"`
 	Notifications NotificationsConfig `yaml:"notifications"`
@@ -437,7 +437,7 @@ func Default() *Config {
 			CriticalOnly:  false,
 		},
 		UI: UIConfig{
-			Theme:         "acid-green",
+			Theme:         "matrix",
 			DefaultLogView: "focused",
 			LogFollow:     true,
 			ShowTimestamps: true,
@@ -496,8 +496,8 @@ func TestLoadCreatesDefaultIfMissing(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("Load() returned nil config")
 	}
-	if cfg.UI.Theme != "acid-green" {
-		t.Errorf("Expected theme 'acid-green', got %q", cfg.UI.Theme)
+	if cfg.UI.Theme != "matrix" {
+		t.Errorf("Expected theme 'matrix', got %q", cfg.UI.Theme)
 	}
 }
 
@@ -544,7 +544,7 @@ Expected: FAIL - `Load`, `Save`, `Path` undefined
 
 Update `internal/config/config.go`:
 ```go
-// Package config handles acidBurn configuration loading and persistence.
+// Package config handles devdash configuration loading and persistence.
 package config
 
 import (
@@ -555,7 +555,7 @@ import (
 )
 
 const (
-	configDir  = "acidburn"
+	configDir  = "devdash"
 	configFile = "config.yaml"
 )
 
@@ -969,7 +969,7 @@ import (
 )
 
 const (
-	registryDir  = "acidburn"
+	registryDir  = "devdash"
 	registryFile = "projects.yaml"
 )
 
@@ -1076,7 +1076,7 @@ import (
 )
 
 func TestGetThemeReturnsDefault(t *testing.T) {
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	if theme.Primary == "" {
 		t.Fatal("Theme should have a primary color")
 	}
@@ -1134,8 +1134,8 @@ type Theme struct {
 
 // Themes contains all available themes.
 var Themes = map[string]Theme{
-	"acid-green": {
-		Name:       "acid-green",
+	"matrix": {
+		Name:       "matrix",
 		Primary:    lipgloss.Color("#39FF14"),
 		Secondary:  lipgloss.Color("#00FF41"),
 		Background: lipgloss.Color("#0D0D0D"),
@@ -1166,12 +1166,12 @@ var Themes = map[string]Theme{
 	},
 }
 
-// GetTheme returns a theme by name, defaulting to acid-green.
+// GetTheme returns a theme by name, defaulting to matrix.
 func GetTheme(name string) Theme {
 	if theme, ok := Themes[name]; ok {
 		return theme
 	}
-	return Themes["acid-green"]
+	return Themes["matrix"]
 }
 ```
 
@@ -1184,7 +1184,7 @@ Expected: PASS
 
 ```bash
 git add internal/ui/theme.go internal/ui/theme_test.go
-git commit -m "feat: add theme system with acid-green, nord, dracula"
+git commit -m "feat: add theme system with matrix, nord, dracula"
 ```
 
 ---
@@ -1578,8 +1578,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/infktd/acidburn/internal/config"
-	"github.com/infktd/acidburn/internal/registry"
+	"github.com/infktd/devdash/internal/config"
+	"github.com/infktd/devdash/internal/registry"
 )
 
 func TestModelImplementsTeaModel(t *testing.T) {
@@ -1645,8 +1645,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/infktd/acidburn/internal/config"
-	"github.com/infktd/acidburn/internal/registry"
+	"github.com/infktd/devdash/internal/config"
+	"github.com/infktd/devdash/internal/registry"
 )
 
 // FocusedPane tracks which pane has focus.
@@ -1658,7 +1658,7 @@ const (
 	PaneLogs
 )
 
-// Model is the main application model for acidBurn.
+// Model is the main application model for devdash.
 type Model struct {
 	config   *config.Config
 	registry *registry.Registry
@@ -1676,7 +1676,7 @@ type Model struct {
 	showSettings bool
 }
 
-// New creates a new acidBurn model.
+// New creates a new devdash model.
 func New(cfg *config.Config, reg *registry.Registry) *Model {
 	theme := GetTheme(cfg.UI.Theme)
 	return &Model{
@@ -1767,7 +1767,7 @@ func (m *Model) View() string {
 }
 
 func (m *Model) renderHeader() string {
-	title := m.styles.Title.Render("acidBurn")
+	title := m.styles.Title.Render("devdash")
 	breadcrumb := m.styles.Breadcrumb.Render(" ─── FLEET")
 
 	stats := fmt.Sprintf("PIDs: %d ── MEM: -- ── Nix: OK", len(m.registry.Projects))
@@ -1955,10 +1955,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/infktd/acidburn/internal/config"
-	"github.com/infktd/acidburn/internal/registry"
-	"github.com/infktd/acidburn/internal/scanner"
-	"github.com/infktd/acidburn/internal/ui"
+	"github.com/infktd/devdash/internal/config"
+	"github.com/infktd/devdash/internal/registry"
+	"github.com/infktd/devdash/internal/scanner"
+	"github.com/infktd/devdash/internal/ui"
 )
 
 func main() {
@@ -1997,7 +1997,7 @@ func main() {
 
 **Step 6: Build and test manually**
 
-Run: `go build -o acidburn . && ./acidburn`
+Run: `go build -o devdash . && ./devdash`
 Expected: Shows the cockpit UI with sidebar, services, logs panes
 
 **Step 7: Commit**
@@ -2025,7 +2025,7 @@ go test ./... -v
 
 **Manual verification:**
 ```bash
-go build -o acidburn . && ./acidburn
+go build -o devdash . && ./devdash
 ```
 
 ---
@@ -2271,7 +2271,7 @@ The plan continues with:
 
 ## Summary
 
-This plan covers the core implementation of acidBurn. Each task follows TDD with:
+This plan covers the core implementation of devdash. Each task follows TDD with:
 - Exact file paths
 - Failing test first
 - Minimal implementation

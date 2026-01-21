@@ -36,6 +36,7 @@ type Styles struct {
 	// Borders
 	FocusedBorder lipgloss.Style
 	BlurredBorder lipgloss.Style
+	ModalBorder   lipgloss.Style
 }
 
 // NewStyles creates styles from a theme.
@@ -117,7 +118,7 @@ func NewStyles(theme Theme) *Styles {
 		StatusMissing: lipgloss.NewStyle().
 			Foreground(theme.Error),
 
-		// Borders
+		// Borders - FocusedBorder uses rounded with primary color for emphasis
 		FocusedBorder: lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(theme.Primary),
@@ -125,5 +126,10 @@ func NewStyles(theme Theme) *Styles {
 		BlurredBorder: lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(theme.Muted),
+
+		// Modal border - keeps rounded for softer look on dialogs
+		ModalBorder: lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(theme.Primary),
 	}
 }

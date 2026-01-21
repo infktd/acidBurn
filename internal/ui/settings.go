@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/infktd/acidburn/internal/config"
+	"github.com/infktd/devdash/internal/config"
 )
 
 // FieldType represents the type of setting field.
@@ -152,7 +152,7 @@ func (sp *SettingsPanel) buildFields() {
 			Label: "Theme",
 			Type:  FieldSelect,
 			Options: []SelectOption{
-				{Label: "Acid Green", Value: "acid-green"},
+				{Label: "Acid Green", Value: "matrix"},
 				{Label: "Gruvbox", Value: "gruvbox"},
 				{Label: "Dracula", Value: "dracula"},
 				{Label: "Nord", Value: "nord"},
@@ -395,7 +395,7 @@ func (sp *SettingsPanel) View() string {
 	content := sp.renderContent()
 
 	// Fixed size modal box (60 cols x 20 rows)
-	modalStyle := sp.styles.FocusedBorder.
+	modalStyle := sp.styles.ModalBorder.
 		Width(60).
 		Height(20).
 		Padding(1, 2)

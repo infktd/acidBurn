@@ -17,8 +17,8 @@ func TestLoadCreatesDefaultIfMissing(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("Load() returned nil config")
 	}
-	if cfg.UI.Theme != "acid-green" {
-		t.Errorf("Expected theme 'acid-green', got %q", cfg.UI.Theme)
+	if cfg.UI.Theme != "matrix" {
+		t.Errorf("Expected theme 'matrix', got %q", cfg.UI.Theme)
 	}
 }
 

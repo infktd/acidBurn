@@ -6,7 +6,7 @@ import (
 )
 
 func TestSplashScreenCreate(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	splash := NewSplashScreen(styles, 80, 24)
 
 	if splash == nil {
@@ -18,7 +18,7 @@ func TestSplashScreenCreate(t *testing.T) {
 }
 
 func TestSplashScreenProgress(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	splash := NewSplashScreen(styles, 80, 24)
 
 	splash.SetProgress(0.5)
@@ -39,7 +39,7 @@ func TestSplashScreenProgress(t *testing.T) {
 }
 
 func TestSplashScreenMessage(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	splash := NewSplashScreen(styles, 80, 24)
 
 	splash.SetMessage("Scanning projects...")
@@ -49,7 +49,7 @@ func TestSplashScreenMessage(t *testing.T) {
 }
 
 func TestSplashScreenShowHide(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	splash := NewSplashScreen(styles, 80, 24)
 
 	splash.Hide()
@@ -64,7 +64,7 @@ func TestSplashScreenShowHide(t *testing.T) {
 }
 
 func TestSplashScreenView(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	splash := NewSplashScreen(styles, 80, 24)
 
 	view := splash.View()
@@ -72,9 +72,9 @@ func TestSplashScreenView(t *testing.T) {
 		t.Error("view should have content when visible")
 	}
 
-	// Should contain acidBurn title
-	if !strings.Contains(view, "acidBurn") {
-		t.Error("view should contain 'acidBurn'")
+	// Should contain tagline
+	if !strings.Contains(view, "fleet control") {
+		t.Error("view should contain 'fleet control' tagline")
 	}
 
 	// Should contain progress bar characters
@@ -84,7 +84,7 @@ func TestSplashScreenView(t *testing.T) {
 }
 
 func TestSplashScreenViewWhenHidden(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	splash := NewSplashScreen(styles, 80, 24)
 
 	splash.Hide()
@@ -95,7 +95,7 @@ func TestSplashScreenViewWhenHidden(t *testing.T) {
 }
 
 func TestSplashScreenCustomAsciiArt(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	splash := NewSplashScreen(styles, 80, 24)
 
 	customArt := "=== CUSTOM ==="
@@ -108,7 +108,7 @@ func TestSplashScreenCustomAsciiArt(t *testing.T) {
 }
 
 func TestSplashScreenProgressBar(t *testing.T) {
-	styles := NewStyles(GetTheme("acid-green"))
+	styles := NewStyles(GetTheme("matrix"))
 	splash := NewSplashScreen(styles, 80, 24)
 
 	// At 0%

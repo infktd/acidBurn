@@ -14,14 +14,16 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lucasb-eyer/go-colorful"
 
-	"github.com/infktd/acidburn/internal/compose"
-	"github.com/infktd/acidburn/internal/config"
-	"github.com/infktd/acidburn/internal/health"
-	"github.com/infktd/acidburn/internal/notify"
-	"github.com/infktd/acidburn/internal/registry"
+	"github.com/infktd/devdash/internal/compose"
+	"github.com/infktd/devdash/internal/config"
+	"github.com/infktd/devdash/internal/health"
+	"github.com/infktd/devdash/internal/notify"
+	"github.com/infktd/devdash/internal/registry"
 )
 
 // FocusedPane tracks which pane has focus.
@@ -68,7 +70,7 @@ func (i sectionHeaderItem) Description() string {
 	return ""
 }
 
-// Model is the main application model for acidBurn.
+// Model is the main application model for devdash.
 type Model struct {
 	// Core data
 	config   *config.Config
@@ -91,8 +93,9 @@ type Model struct {
 	showSplash   bool
 
 	// Search state (for logs)
-	searchMode  bool
-	searchInput string
+	searchMode         bool
+	searchInput        textinput.Model
+	followBeforeSearch bool // Track follow mode state before entering search
 
 	// Project filter state (custom implementation)
 	projectFilterMode  bool
@@ -192,7 +195,7 @@ type configEditedMsg struct {
 	err    error
 }
 
-// New creates a new acidBurn model.
+// New creates a new devdash model.
 func New(cfg *config.Config, reg *registry.Registry) *Model {
 	theme := GetTheme(cfg.UI.Theme)
 	styles := NewStyles(theme)
@@ -204,15 +207,23 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(theme.Primary)
 
-	// Initialize services table
+	// Initialize search input
+	ti := textinput.New()
+	ti.Placeholder = ""
+	ti.Prompt = "/"
+	ti.PromptStyle = lipgloss.NewStyle().Foreground(theme.Primary)
+	ti.TextStyle = lipgloss.NewStyle().Foreground(theme.Primary)
+	ti.Cursor.Style = lipgloss.NewStyle().Foreground(theme.Primary)
+	ti.CharLimit = 100
+
+	// Initialize services table - proper widths for content
 	columns := []table.Column{
 		{Title: "STATUS", Width: 10},
-		{Title: "ACTIVITY", Width: 8},
-		{Title: "SERVICE", Width: 20},
+		{Title: "SERVICE", Width: 12},  // Reduced from 18 to 12
 		{Title: "PID", Width: 8},
-		{Title: "CPU", Width: 18}, // Increased for sparkline (value + sparkline)
-		{Title: "MEM", Width: 20}, // Increased for sparkline (value + sparkline)
-		{Title: "EXIT", Width: 6},
+		{Title: "CPU", Width: 7},
+		{Title: "MEM", Width: 8},
+		{Title: "UPTIME", Width: 10},
 	}
 	t := table.New(
 		table.WithColumns(columns),
@@ -229,6 +240,7 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 	tableStyle.Selected = tableStyle.Selected.
 		Foreground(theme.Primary).
 		Bold(true)
+	// Default cell padding (0, 1) works well
 	t.SetStyles(tableStyle)
 
 	// Initialize projects list with custom delegate (model set later to avoid circular reference)
@@ -239,8 +251,12 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 	projectsList.SetFilteringEnabled(false)  // Disable built-in filter (we'll use custom)
 	projectsList.SetShowHelp(false)
 
-	// Apply theme colors directly to list styles
+	// Apply theme colors directly to list styles and remove all padding
 	projectsList.Styles.Title = lipgloss.NewStyle()  // Hide default title
+	projectsList.Styles.PaginationStyle = lipgloss.NewStyle()
+	projectsList.Styles.HelpStyle = lipgloss.NewStyle()
+	// Remove any default top/bottom padding from the list
+	projectsList.Styles.NoItems = lipgloss.NewStyle()
 
 	m := &Model{
 		config:   cfg,
@@ -261,6 +277,7 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 		health:        health.NewMonitor(2 * time.Second),
 		notifier:      notify.NewNotifier(cfg.Notifications.SystemEnabled),
 		spinner:             s,
+		searchInput:         ti,
 		servicesTable:       t,
 		projectsList:        projectsList,
 		clients:             make(map[string]*compose.Client),
@@ -276,7 +293,7 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 
 	// Show splash on startup
 	m.showSplash = true
-	m.splash.SetMessage("Starting acidBurn...")
+	m.splash.SetMessage("Starting devdash...")
 	m.splash.SetProgress(0.0)
 
 	// Set model reference on delegate (needed for spinner and loading state)
@@ -286,6 +303,63 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 	m.updateDisplayedProjects()
 
 	return m
+}
+
+// handleMouseEvent handles mouse events for focus following.
+func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Only handle motion and wheel events for focus following
+	if msg.Type != tea.MouseMotion && msg.Type != tea.MouseWheelUp && msg.Type != tea.MouseWheelDown {
+		return m, nil
+	}
+
+	// Skip if modals are open
+	if m.showSplash || m.showSettings || m.showHelp || m.alertsPanel.IsVisible() || m.confirm.IsVisible() {
+		return m, nil
+	}
+
+	// Calculate pane boundaries
+	sidebarWidth := m.config.UI.SidebarWidth
+	servicesHeight := (m.height - 4) / 3 // Approximate services pane height
+
+	// Determine which pane the mouse is over
+	x := msg.X
+	y := msg.Y
+
+	var newFocus FocusedPane
+
+	if x < sidebarWidth {
+		// Mouse is in sidebar (projects)
+		newFocus = PaneSidebar
+	} else {
+		// Mouse is in main area (services or logs)
+		if y < servicesHeight+2 { // +2 for header
+			newFocus = PaneServices
+		} else {
+			newFocus = PaneLogs
+		}
+	}
+
+	// Update focus if changed
+	if m.focused != newFocus {
+		m.focused = newFocus
+	}
+
+	// Handle mouse wheel scrolling in logs pane
+	if newFocus == PaneLogs {
+		if msg.Type == tea.MouseWheelUp {
+			// Scroll up multiple times for better mouse feel
+			for i := 0; i < 3; i++ {
+				m.logView.ScrollUp()
+			}
+		} else if msg.Type == tea.MouseWheelDown {
+			// Scroll down multiple times for better mouse feel
+			for i := 0; i < 3; i++ {
+				m.logView.ScrollDown()
+			}
+		}
+	}
+
+	return m, nil
 }
 
 // Init initializes the model.
@@ -486,9 +560,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.settings, cmd = m.settings.Update(msg)
 
-		// Check if modal was closed
+		// Check if modal was closed (via cancel/Esc)
 		if !m.settings.IsVisible() {
 			m.showSettings = false
+			// Restart tickers that were paused while settings modal was open
+			return m, tea.Batch(
+				cmd,
+				m.tickCmd(),
+				m.activityTickCmd(),
+				m.pollServicesCmd(),
+			)
 		}
 
 		return m, cmd
@@ -498,12 +579,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.confirm.IsVisible() {
 		var cmd tea.Cmd
 		m.confirm, cmd = m.confirm.Update(msg)
+		// Check if dialog was closed
+		if !m.confirm.IsVisible() {
+			// Restart tickers that were paused while confirm dialog was open
+			return m, tea.Batch(
+				cmd,
+				m.tickCmd(),
+				m.activityTickCmd(),
+				m.pollServicesCmd(),
+			)
+		}
 		return m, cmd
 	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKeyPress(msg)
+
+	case tea.MouseMsg:
+		// Handle mouse events for focus following
+		return m.handleMouseEvent(msg)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -522,6 +617,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case splashTickMsg:
 		if m.showSplash {
+			// Advance animation frame for wave effect
+			m.splash.Tick()
+
 			// Increment progress by ~10% each tick (50ms intervals = ~500ms total)
 			newProgress := m.splash.Progress() + 0.1
 			m.splash.SetProgress(newProgress)
@@ -789,6 +887,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toast.Show(fmt.Sprintf("Failed to start %s: %v", msg.project, msg.err), ToastError, 5*time.Second)
 		} else {
 			m.toast.Show(fmt.Sprintf("%s started", msg.project), ToastSuccess, 3*time.Second)
+			// Update project state cache to Running to prevent repeated start attempts
+			if p := m.currentProject(); p != nil && p.Name == msg.project {
+				m.projectStates[p.Path] = registry.StateRunning
+			}
 		}
 		cmds = append(cmds, m.toast.TickCmd())
 		cmds = append(cmds, m.pollServicesCmd())
@@ -807,6 +909,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Clear services and logs for stopped project
 			m.services = nil
 			m.logView.buffer.Clear()
+			// Update project state cache to Idle to prevent state confusion
+			if p := m.currentProject(); p != nil && p.Name == msg.project {
+				m.projectStates[p.Path] = registry.StateIdle
+			}
 		}
 		cmds = append(cmds, m.toast.TickCmd())
 
@@ -847,11 +953,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		tableStyle.Selected = tableStyle.Selected.
 			Foreground(m.styles.theme.Primary).
 			Bold(true)
+		// Keep default cell padding
 		m.servicesTable.SetStyles(tableStyle)
 
 		// Update spinner style
 		m.spinner.Style = lipgloss.NewStyle().Foreground(m.styles.theme.Primary)
 
+		// Restart tickers that were paused while settings modal was open
+		cmds = append(cmds, m.tickCmd())
+		cmds = append(cmds, m.activityTickCmd())
+		cmds = append(cmds, m.pollServicesCmd())
 		cmds = append(cmds, m.toast.TickCmd())
 
 	case settingsSaveErrorMsg:
@@ -961,6 +1072,13 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Check if modal was closed
 		if !m.helpPanel.IsVisible() {
 			m.showHelp = false
+			// Restart tickers that were paused while help modal was open
+			return m, tea.Batch(
+				cmd,
+				m.tickCmd(),
+				m.activityTickCmd(),
+				m.pollServicesCmd(),
+			)
 		}
 
 		return m, cmd
@@ -969,6 +1087,16 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Alerts modal - delegate to panel
 	if m.alertsPanel.IsVisible() {
 		_, cmd := m.alertsPanel.Update(msg)
+		// Check if modal was closed
+		if !m.alertsPanel.IsVisible() {
+			// Restart tickers that were paused while alerts modal was open
+			return m, tea.Batch(
+				cmd,
+				m.tickCmd(),
+				m.activityTickCmd(),
+				m.pollServicesCmd(),
+			)
+		}
 		return m, cmd
 	}
 
@@ -977,25 +1105,23 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyEsc:
 			m.searchMode = false
-			m.searchInput = ""
+			m.searchInput.Reset()
+			m.searchInput.Blur()
 			m.logView.ClearSearch()
+			// Restore follow mode when canceling search
+			m.logView.SetFollow(m.followBeforeSearch)
 			return m, nil
 		case tea.KeyEnter:
 			m.searchMode = false
+			m.searchInput.Blur()
 			// Keep search active, just exit input mode
 			return m, nil
-		case tea.KeyBackspace:
-			if len(m.searchInput) > 0 {
-				m.searchInput = m.searchInput[:len(m.searchInput)-1]
-				m.logView.SetSearch(m.searchInput)
-			}
-			return m, nil
 		default:
-			if msg.Type == tea.KeyRunes {
-				m.searchInput += string(msg.Runes)
-				m.logView.SetSearch(m.searchInput)
-			}
-			return m, nil
+			// Delegate to textinput for all other keys
+			var cmd tea.Cmd
+			m.searchInput, cmd = m.searchInput.Update(msg)
+			m.logView.SetSearch(m.searchInput.Value())
+			return m, cmd
 		}
 	}
 
@@ -1033,10 +1159,14 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Back):
-		// Don't handle Esc globally if sidebar is filtering
+		// Don't handle Esc globally if sidebar is filtering or logs has active search
 		if m.focused == PaneSidebar && m.projectFilterMode {
 			// Let sidebar handler deal with it
 			return m.handleSidebarKey(msg)
+		}
+		if m.focused == PaneLogs && m.logView.IsSearchActive() {
+			// Let logs handler deal with it
+			return m.handleLogsKey(msg)
 		}
 		return m, nil
 	}
@@ -1045,11 +1175,11 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.focused != PaneSidebar || !m.projectFilterMode {
 		switch {
 		case key.Matches(msg, m.keys.Up):
-			m.moveUp()
-			return m, nil
+			cmd := m.moveUp()
+			return m, cmd
 		case key.Matches(msg, m.keys.Down):
-			m.moveDown()
-			return m, nil
+			cmd := m.moveDown()
+			return m, cmd
 		}
 	}
 
@@ -1101,24 +1231,24 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.projectFilterInput = ""
 		return m, nil
 	case key.Matches(msg, m.keys.Select):
-		// Enter - select project and move to services
+		// Enter - move focus to services pane
+		// Services are already displayed from cursor movement
 		m.focused = PaneServices
-		m.selectedService = 0
-		m.services = nil // Clear services, will be repopulated
-		m.lastLogMsg = make(map[string]string)           // Reset log tracking for new project
-		m.logActivity = make(map[string]time.Time)       // Reset log activity tracking
-		m.serviceStates = make(map[string]string)        // Reset state tracking
-		m.stateChangeTime = make(map[string]time.Time)   // Reset state change times
-		m.stateFlashIntensity = make(map[string]float64) // Reset flash intensity
-		m.cpuHistory = make(map[string][]float64)        // Reset CPU history
-		m.memHistory = make(map[string][]int64)          // Reset memory history
-		m.logView.SetService("")                         // Clear service filter
-		m.logView.buffer.Clear()                         // Clear old logs
-		return m, m.pollServicesCmd()
+		return m, nil
 	case key.Matches(msg, m.keys.Start):
 		// s - start project
 		if p := m.currentProject(); p != nil {
-			state := p.DetectState()
+			// Don't allow starting if ANY loading operation is in progress
+			if m.loadingOp != "" {
+				return m, nil
+			}
+
+			// Use cached state if available, otherwise detect fresh
+			state, hasCached := m.projectStates[p.Path]
+			if !hasCached {
+				state = p.DetectState()
+			}
+
 			if state == registry.StateIdle || state == registry.StateStale {
 				// Start idle project with devenv up -d
 				m.loadingOp = "Starting"
@@ -1126,30 +1256,47 @@ func (m *Model) handleSidebarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.loadingProgress = 0.0
 				m.loadingStage = "Initializing..."
 				m.loadingStarted = time.Now()
+
+				// Immediately update cache to prevent re-entry
+				m.projectStates[p.Path] = registry.StateRunning
+
 				m.toast.Show(fmt.Sprintf("Starting %s...", p.Name), ToastInfo, 3*time.Second)
 				return m, tea.Batch(m.startProjectCmd(p), m.toast.TickCmd(), m.progressTickCmd())
-			} else if client := m.getOrCreateClient(p); client != nil {
-				// Start all services in running project
-				var cmds []tea.Cmd
-				for _, svc := range m.services {
-					cmds = append(cmds, m.startServiceCmd(client, svc.Name))
-				}
-				return m, tea.Batch(cmds...)
+			} else if state == registry.StateRunning || state == registry.StateDegraded {
+				// Project already running - don't show progress, just inform
+				m.toast.Show("Project already running", ToastInfo, 2*time.Second)
+				return m, m.toast.TickCmd()
 			}
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Stop):
 		// x - stop project
 		if p := m.currentProject(); p != nil {
-			state := p.DetectState()
+			// Don't allow stopping if ANY loading operation is in progress
+			if m.loadingOp != "" {
+				return m, nil
+			}
+
+			state, hasCached := m.projectStates[p.Path]
+			if !hasCached {
+				state = p.DetectState()
+			}
+
 			if state == registry.StateRunning || state == registry.StateDegraded {
 				m.loadingOp = "Stopping"
 				m.loadingProject = p.Name
 				m.loadingProgress = 0.0
 				m.loadingStage = "Stopping..."
 				m.loadingStarted = time.Now()
+
+				// Immediately update cache to prevent re-entry
+				m.projectStates[p.Path] = registry.StateIdle
+
 				m.toast.Show(fmt.Sprintf("Stopping %s...", p.Name), ToastInfo, 3*time.Second)
 				return m, tea.Batch(m.stopProjectCmd(p), m.toast.TickCmd(), m.progressTickCmd())
+			} else {
+				m.toast.Show("Project not running", ToastInfo, 2*time.Second)
+				return m, m.toast.TickCmd()
 			}
 		}
 		return m, nil
@@ -1292,9 +1439,11 @@ func (m *Model) handleLogsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Search) || msg.String() == "/":
 		// / - enter search mode
+		m.followBeforeSearch = m.logView.IsFollowing() // Save follow state
 		m.searchMode = true
-		m.searchInput = ""
-		return m, nil
+		m.searchInput.Reset()
+		m.searchInput.Focus()
+		return m, m.searchInput.Cursor.BlinkCmd()
 	case key.Matches(msg, m.keys.NextMatch):
 		// n - next search match
 		m.logView.NextMatch()
@@ -1308,9 +1457,16 @@ func (m *Model) handleLogsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.logView.ToggleFilter()
 		return m, nil
 	case key.Matches(msg, m.keys.Back):
-		// Esc - clear service filter and go back to services
+		// Esc - if search active, clear search first. Otherwise go back to services.
+		if m.logView.IsSearchActive() {
+			m.logView.ClearSearch()
+			m.searchInput.Reset()
+			// Restore follow mode to previous state
+			m.logView.SetFollow(m.followBeforeSearch)
+			return m, nil
+		}
+		// No search active, go back to services
 		m.logView.SetService("") // Show all logs
-		m.logView.ClearSearch()  // Also clear search
 		m.focused = PaneServices
 		return m, nil
 	case key.Matches(msg, m.keys.Follow):
@@ -1471,7 +1627,22 @@ func (m *Model) cycleFocusReverse() {
 	m.focused = (m.focused + 2) % 3 // +2 is same as -1 mod 3
 }
 
-func (m *Model) moveUp() {
+// switchToCurrentProject updates the services display for the currently selected project
+func (m *Model) switchToCurrentProject() {
+	m.selectedService = 0
+	m.services = nil // Clear services, will be repopulated
+	m.lastLogMsg = make(map[string]string)           // Reset log tracking for new project
+	m.logActivity = make(map[string]time.Time)       // Reset log activity tracking
+	m.serviceStates = make(map[string]string)        // Reset state tracking
+	m.stateChangeTime = make(map[string]time.Time)   // Reset state change times
+	m.stateFlashIntensity = make(map[string]float64) // Reset flash intensity
+	m.cpuHistory = make(map[string][]float64)        // Reset CPU history
+	m.memHistory = make(map[string][]int64)          // Reset memory history
+	m.logView.SetService("")                         // Clear service filter
+	m.logView.buffer.Clear()                         // Clear old logs
+}
+
+func (m *Model) moveUp() tea.Cmd {
 	switch m.focused {
 	case PaneSidebar:
 		// Use list's cursor movement
@@ -1488,7 +1659,14 @@ func (m *Model) moveUp() {
 			}
 
 			// Update selectedProject to match
+			oldProject := m.selectedProject
 			m.selectedProject = m.listIndexToProjectIndex(m.projectsList.Index())
+
+			// If project changed, update services display immediately
+			if oldProject != m.selectedProject {
+				m.switchToCurrentProject()
+				return m.pollServicesCmd()
+			}
 		}
 	case PaneServices:
 		if m.selectedService > 0 {
@@ -1498,9 +1676,10 @@ func (m *Model) moveUp() {
 	case PaneLogs:
 		m.logView.ScrollUp()
 	}
+	return nil
 }
 
-func (m *Model) moveDown() {
+func (m *Model) moveDown() tea.Cmd {
 	switch m.focused {
 	case PaneSidebar:
 		// Use list's cursor movement
@@ -1517,7 +1696,14 @@ func (m *Model) moveDown() {
 			}
 
 			// Update selectedProject to match
+			oldProject := m.selectedProject
 			m.selectedProject = m.listIndexToProjectIndex(m.projectsList.Index())
+
+			// If project changed, update services display immediately
+			if oldProject != m.selectedProject {
+				m.switchToCurrentProject()
+				return m.pollServicesCmd()
+			}
 		}
 	case PaneServices:
 		if m.selectedService < len(m.services)-1 {
@@ -1527,6 +1713,7 @@ func (m *Model) moveDown() {
 	case PaneLogs:
 		m.logView.ScrollDown()
 	}
+	return nil
 }
 
 // View renders the model.
@@ -1546,16 +1733,6 @@ func (m *Model) View() string {
 	footer := m.renderFooter()
 
 	main := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
-
-	// Toast overlay
-	if m.toast.IsVisible() {
-		toast := m.toast.View()
-		// Position toast at top center
-		toastStyle := lipgloss.NewStyle().
-			Width(m.width).
-			Align(lipgloss.Center)
-		main = lipgloss.JoinVertical(lipgloss.Left, toastStyle.Render(toast), main)
-	}
 
 	// Settings modal overlay (centered on screen)
 	if m.showSettings {
@@ -1619,7 +1796,7 @@ func (m *Model) View() string {
 }
 
 func (m *Model) renderHeader() string {
-	title := m.styles.Title.Render("acidBurn")
+	title := m.styles.Title.Render("devdash")
 	breadcrumb := m.styles.Breadcrumb.Render(" ─── FLEET")
 
 	if p := m.currentProject(); p != nil {
@@ -1637,7 +1814,14 @@ func (m *Model) renderHeader() string {
 	statsView := m.styles.StatusBar.Render(stats)
 
 	left := title + breadcrumb
+
+	// Add toast to header if visible
 	right := statsView
+	if m.toast.IsVisible() {
+		toast := m.toast.View()
+		// Toast replaces stats when visible
+		right = toast
+	}
 
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
 	if gap < 0 {
@@ -1666,7 +1850,7 @@ func (m *Model) renderSidebar(width, height int) string {
 
 	// Custom filter UI
 	var filterLine string
-	listHeight := height - 4
+	listHeight := height  // Use full height - let border handle spacing
 	if m.projectFilterMode || m.projectFilterInput != "" {
 		filterPromptStyle := lipgloss.NewStyle().
 			Foreground(m.styles.theme.Primary).
@@ -1681,19 +1865,26 @@ func (m *Model) renderSidebar(width, height int) string {
 			// Show filter without cursor when applied but not in input mode
 			filterLine = filterPromptStyle.Render("Filter: ") + filterInputStyle.Render(m.projectFilterInput)
 		}
-		listHeight = height - 5 // Reduce by 1 for filter line
+		listHeight = height - 1 // Just reduce by filter line
 	}
 
 	// Update list size and render
 	m.projectsList.SetSize(width-4, listHeight)
 	listView := m.projectsList.View()
 
-	// Build content
-	content := titleLine + "\n"
-	if filterLine != "" {
-		content += filterLine + "\n"
+	// Aggressively remove leading blank lines by splitting and rejoining
+	lines := strings.Split(listView, "\n")
+	// Skip leading empty lines
+	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+		lines = lines[1:]
 	}
-	content += listView
+	listView = strings.Join(lines, "\n")
+
+	// Build content - minimal gaps
+	content := titleLine + "\n" + listView
+	if filterLine != "" {
+		content = titleLine + "\n" + filterLine + "\n" + listView
+	}
 
 	style := m.styles.BlurredBorder
 	if m.focused == PaneSidebar {
@@ -1775,10 +1966,23 @@ func (m *Model) renderServices(width, height int) string {
 	if p := m.currentProject(); p != nil {
 		// Title with focus indicator
 		title := fmt.Sprintf("SERVICES [%s]", p.Name)
-		content = m.renderSectionTitle(title, m.focused == PaneServices, width-4) + "\n\n"
+		content = m.renderSectionTitle(title, m.focused == PaneServices, width-4) + "\n"
 
 		if len(m.services) == 0 {
-			content += m.styles.Breadcrumb.Render("No services running - press 's' to start")
+			// Enhanced empty state with better visual hierarchy
+			emptyStateHeight := height - 8
+			emptyContent := m.renderEmptyState(
+				"No Services Running",
+				[]string{
+					"This project has no active services",
+					"",
+					"Press 's' to start the project",
+					"Press '?' for more commands",
+				},
+				width-6,
+				emptyStateHeight,
+			)
+			content += emptyContent
 		} else {
 			// Update table focus based on pane focus
 			m.servicesTable.SetHeight(height - 6)
@@ -1793,7 +1997,19 @@ func (m *Model) renderServices(width, height int) string {
 		}
 	} else {
 		content = m.renderSectionTitle("SERVICES", m.focused == PaneServices, width-4) + "\n"
-		content += m.styles.Breadcrumb.Render("Select a project from the sidebar")
+		emptyStateHeight := height - 8
+		emptyContent := m.renderEmptyState(
+			"No Project Selected",
+			[]string{
+				"Select a project from the sidebar",
+				"to view its services",
+				"",
+				"Use ↑/↓ or Tab to navigate",
+			},
+			width-6,
+			emptyStateHeight,
+		)
+		content += emptyContent
 	}
 
 	style := m.styles.BlurredBorder
@@ -1833,8 +2049,8 @@ func (m *Model) renderLogs(width, height int) string {
 
 	// Show search info
 	if m.searchMode {
-		// Active input mode - show cursor
-		statusParts = append(statusParts, m.styles.SelectedItem.Render(fmt.Sprintf("/%s_", m.searchInput)))
+		// Active input mode - show textinput with cursor
+		statusParts = append(statusParts, m.searchInput.View())
 	} else if m.logView.IsSearchActive() {
 		// Search active but not in input mode
 		matchInfo := ""
@@ -1843,10 +2059,11 @@ func (m *Model) renderLogs(width, height int) string {
 		} else {
 			matchInfo = " (no matches)"
 		}
+		searchTerm := m.searchInput.Value()
 		if m.logView.IsFilterMode() {
-			statusParts = append(statusParts, fmt.Sprintf("[FILTER: %s]%s", m.searchInput, matchInfo))
+			statusParts = append(statusParts, fmt.Sprintf("[FILTER: %s]%s", searchTerm, matchInfo))
 		} else {
-			statusParts = append(statusParts, fmt.Sprintf("[SEARCH: %s]%s", m.searchInput, matchInfo))
+			statusParts = append(statusParts, fmt.Sprintf("[SEARCH: %s]%s", searchTerm, matchInfo))
 		}
 	}
 
@@ -1911,44 +2128,47 @@ func (m *Model) updateServicesTable() {
 			status = "Stopped"
 		}
 
+		// Simple values - let table component handle width and padding
 		pid := "-"
 		if svc.Pid > 0 {
 			pid = fmt.Sprintf("%d", svc.Pid)
 		}
 
 		cpu := "-"
-		if svc.IsRunning && svc.CPU > 0 {
+		if svc.IsRunning {
 			cpu = fmt.Sprintf("%.1f%%", svc.CPU)
-			// Add sparkline if we have history
-			if cpuHist, exists := m.cpuHistory[svc.Name]; exists && len(cpuHist) >= 3 {
-				sparkline := renderSparkline(cpuHist)
-				cpu = fmt.Sprintf("%5s %s", cpu, sparkline)
-			}
 		}
 
 		mem := "-"
 		if svc.IsRunning && svc.Mem > 0 {
 			mem = formatBytes(svc.Mem)
-			// Add sparkline if we have history
-			if memHist, exists := m.memHistory[svc.Name]; exists && len(memHist) >= 3 {
-				sparkline := renderMemorySparkline(memHist)
-				mem = fmt.Sprintf("%6s %s", mem, sparkline)
-			}
 		}
 
-		exit := "-"
-		if svc.ExitCode != 0 {
-			exit = fmt.Sprintf("%d", svc.ExitCode)
+		uptimeOrExit := "-"
+		if svc.IsRunning && svc.SystemTime != "" {
+			uptimeOrExit = formatSystemTime(svc.SystemTime)
+		} else if svc.ExitCode != 0 {
+			uptimeOrExit = fmt.Sprintf("exit %d", svc.ExitCode)
 		}
-
-		// Determine activity indicator (animated spinner if logs received recently)
-		activity := m.getActivityIndicator(svc.Name)
 
 		// Apply flash effect to status if state recently changed
 		styledStatus := m.applyFlashEffect(status, svc.Name, svc.IsRunning)
 
-		// New column order: Status, Activity, Service, PID, CPU, Memory, Exit
-		rows[i] = table.Row{styledStatus, activity, svc.Name, pid, cpu, mem, exit}
+		// Get activity indicator (animated spinner if logs received recently)
+		activity := m.getActivityIndicator(svc.Name)
+
+		// Combine status and activity
+		statusWithActivity := styledStatus + " " + activity
+
+		// Simple row - table handles all width management
+		rows[i] = table.Row{
+			statusWithActivity,
+			svc.Name,
+			pid,
+			cpu,
+			mem,
+			uptimeOrExit,
+		}
 	}
 	m.servicesTable.SetRows(rows)
 }
@@ -2059,6 +2279,64 @@ func renderMemorySparkline(values []int64) string {
 	return renderSparkline(floatValues)
 }
 
+// renderCompactProgress renders a compact progress indicator for the sidebar.
+// Example output: "devdash [████░░] Starting..."
+func (m *Model) renderCompactProgress(progress float64, stage string) string {
+	// Get current project name
+	projectName := m.loadingProject
+	if p := m.currentProject(); p != nil && p.Name == m.loadingProject {
+		projectName = p.Name
+	}
+
+	// Compact bar - just 6 chars
+	barWidth := 6
+	filledWidth := int(float64(barWidth) * progress)
+	if filledWidth > barWidth {
+		filledWidth = barWidth
+	}
+
+	// Get theme colors
+	primaryHex := string(m.styles.theme.Primary)
+	secondaryHex := string(m.styles.theme.Secondary)
+	mutedHex := string(m.styles.theme.Muted)
+
+	// Parse colors
+	primaryCol, _ := colorful.Hex(primaryHex)
+	secondaryCol, _ := colorful.Hex(secondaryHex)
+
+	// Build mini gradient bar
+	var bar strings.Builder
+	bar.WriteString("[")
+
+	for i := 0; i < barWidth; i++ {
+		if i < filledWidth {
+			var gradientPos float64
+			if filledWidth > 1 {
+				gradientPos = float64(i) / float64(filledWidth-1)
+			}
+			blendedColor := primaryCol.BlendLuv(secondaryCol, gradientPos)
+			charStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(blendedColor.Hex()))
+			bar.WriteString(charStyle.Render("█"))
+		} else {
+			emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(mutedHex))
+			bar.WriteString(emptyStyle.Render("░"))
+		}
+	}
+	bar.WriteString("]")
+
+	// Compact stage text - just the first word or shortened version
+	compactStage := stage
+	if len(stage) > 12 {
+		compactStage = stage[:12] + "..."
+	}
+
+	// Build: "projectName [bar] stage"
+	nameStyle := m.styles.SelectedItem
+	stageStyle := lipgloss.NewStyle().Foreground(m.styles.theme.Muted)
+
+	return nameStyle.Render(projectName) + " " + bar.String() + " " + stageStyle.Render(compactStage)
+}
+
 // renderProgressBar renders a progress bar with percentage and stage description.
 // Example output: "[██████░░░░] 60% Starting services..."
 func (m *Model) renderProgressBar(progress float64, stage string, width int) string {
@@ -2071,28 +2349,94 @@ func (m *Model) renderProgressBar(progress float64, stage string, width int) str
 	barWidth := 10 // Fixed bar width for consistency
 	percentage := int(progress * 100)
 
-	// Build the bar using block characters
+	// Build the bar using block characters with gradient
 	filledWidth := int(float64(barWidth) * progress)
 	if filledWidth > barWidth {
 		filledWidth = barWidth
 	}
 
-	bar := strings.Repeat("█", filledWidth) + strings.Repeat("░", barWidth-filledWidth)
+	// Get theme colors for gradient
+	primaryHex := string(m.styles.theme.Primary)
+	secondaryHex := string(m.styles.theme.Secondary)
+	mutedHex := string(m.styles.theme.Muted)
 
-	// Build final string
-	result := fmt.Sprintf("[%s] %2d%% %s", bar, percentage, stage)
+	// Parse colors for gradient blending
+	primaryCol, _ := colorful.Hex(primaryHex)
+	secondaryCol, _ := colorful.Hex(secondaryHex)
 
-	// Style with primary color
-	return lipgloss.NewStyle().
+	// Build gradient bar
+	var result strings.Builder
+	result.WriteString("[")
+
+	for i := 0; i < barWidth; i++ {
+		if i < filledWidth {
+			// Calculate gradient position
+			var gradientPos float64
+			if filledWidth > 1 {
+				gradientPos = float64(i) / float64(filledWidth-1)
+			}
+			blendedColor := primaryCol.BlendLuv(secondaryCol, gradientPos)
+			charStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(blendedColor.Hex()))
+			result.WriteString(charStyle.Render("█"))
+		} else {
+			emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(mutedHex))
+			result.WriteString(emptyStyle.Render("░"))
+		}
+	}
+
+	result.WriteString("] ")
+	result.WriteString(fmt.Sprintf("%2d%% ", percentage))
+
+	// Stage text in muted color
+	stageStyle := lipgloss.NewStyle().Foreground(m.styles.theme.Muted)
+	result.WriteString(stageStyle.Render(stage))
+
+	return result.String()
+}
+
+// renderEmptyState renders a centered empty state message.
+func (m *Model) renderEmptyState(title string, lines []string, width, height int) string {
+	var content []string
+
+	// Title in primary color
+	titleStyle := lipgloss.NewStyle().
 		Foreground(m.styles.theme.Primary).
-		Render(result)
+		Bold(true)
+	content = append(content, titleStyle.Render(title))
+	content = append(content, "")
+
+	// Message lines in muted color
+	messageStyle := lipgloss.NewStyle().
+		Foreground(m.styles.theme.Muted)
+
+	for _, line := range lines {
+		if line == "" {
+			content = append(content, "")
+		} else {
+			content = append(content, messageStyle.Render(line))
+		}
+	}
+
+	// Join all lines
+	joined := lipgloss.JoinVertical(lipgloss.Left, content...)
+
+	// Center the content
+	return lipgloss.Place(
+		width,
+		height,
+		lipgloss.Center,
+		lipgloss.Center,
+		joined,
+	)
 }
 
 // renderSectionTitle renders a section title in code comment style with separator line.
 // Uses primary color if focused, muted color otherwise.
 func (m *Model) renderSectionTitle(title string, focused bool, width int) string {
-	// Calculate separator line length (width minus "// " and title and some padding)
-	separatorLen := width - len(title) - 4
+	// Calculate separator line length
+	// Format: "// " (3) + title + " " (1) + separator
+	// We want the line to extend close to the edge
+	separatorLen := width - len(title) - 4 + 4 // +4 to extend closer to edge
 	if separatorLen < 0 {
 		separatorLen = 0
 	}
@@ -2166,6 +2510,45 @@ func formatBytes(bytes int64) string {
 	}
 }
 
+// formatDuration formats a duration in a compact human-readable form.
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		hours := int(d.Hours())
+		mins := int(d.Minutes()) % 60
+		if mins > 0 {
+			return fmt.Sprintf("%dh%dm", hours, mins)
+		}
+		return fmt.Sprintf("%dh", hours)
+	}
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	if hours > 0 {
+		return fmt.Sprintf("%dd%dh", days, hours)
+	}
+	return fmt.Sprintf("%dd", days)
+}
+
+// formatSystemTime formats the system_time string from process-compose API.
+// The API returns time in format like "1h2m3s" or "2m30.5s".
+func formatSystemTime(sysTime string) string {
+	// Try to parse as Go duration
+	d, err := time.ParseDuration(sysTime)
+	if err != nil {
+		// If parsing fails, return as-is but truncated
+		if len(sysTime) > 8 {
+			return sysTime[:8]
+		}
+		return sysTime
+	}
+	return formatDuration(d)
+}
+
 // projectDelegate is a custom list delegate for rendering projects.
 type projectDelegate struct {
 	styles *Styles
@@ -2178,7 +2561,10 @@ func NewProjectDelegate(styles *Styles, model *Model) list.ItemDelegate {
 }
 
 func (d *projectDelegate) Height() int { return 1 }
-func (d *projectDelegate) Spacing() int { return 0 }
+func (d *projectDelegate) Spacing() int {
+	// Subtle spacing between project items for better readability
+	return 0 // Keep at 0 for now - spacing makes list too sparse in sidebar
+}
 func (d *projectDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
 
 func (d *projectDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
@@ -2187,8 +2573,9 @@ func (d *projectDelegate) Render(w io.Writer, m list.Model, index int, item list
 		headerStyle := lipgloss.NewStyle().
 			Foreground(d.styles.theme.Muted).
 			Bold(true)
-		// Add a small visual separator
-		fmt.Fprintf(w, " %s", headerStyle.Render(headerItem.title))
+		// Enhanced visual separator with subtle styling
+		separator := lipgloss.NewStyle().Foreground(d.styles.theme.Muted).Render("─")
+		fmt.Fprintf(w, " %s %s", headerStyle.Render(headerItem.title), separator)
 		return
 	}
 
@@ -2197,12 +2584,12 @@ func (d *projectDelegate) Render(w io.Writer, m list.Model, index int, item list
 		return
 	}
 
-	// Get status glyph (or progress bar if loading)
+	// Get status glyph (or progress indicator if loading)
 	var glyph string
-	var progressBar string
+	var loadingDisplay string
 	if d.model != nil && d.model.loadingProject == projItem.project.Name && d.model.loadingOp != "" {
-		// Show progress bar when this project is loading
-		progressBar = d.model.renderProgressBar(d.model.loadingProgress, d.model.loadingStage, 40)
+		// Show compact progress indicator when this project is loading
+		loadingDisplay = d.model.renderCompactProgress(d.model.loadingProgress, d.model.loadingStage)
 		glyph = "" // Don't show status glyph during loading
 	} else {
 		switch projItem.state {
@@ -2224,8 +2611,16 @@ func (d *projectDelegate) Render(w io.Writer, m list.Model, index int, item list
 		name = name + " ■"
 	}
 
-	// Check if selected
-	isSelected := index == m.Index()
+	// Check if selected - use our model's selection state for consistency
+	// This avoids potential flicker from list component's internal state
+	isSelected := false
+	if d.model != nil {
+		expectedListIndex := d.model.projectIndexToListIndex(d.model.selectedProject)
+		isSelected = index == expectedListIndex
+	} else {
+		// Fallback to list's index if model not set
+		isSelected = index == m.Index()
+	}
 	cursor := "   "  // Indent project items under section headers
 	if isSelected {
 		cursor = " > "
@@ -2238,9 +2633,9 @@ func (d *projectDelegate) Render(w io.Writer, m list.Model, index int, item list
 		}
 	}
 
-	// Show progress bar during loading, otherwise show normal status + name
-	if progressBar != "" {
-		fmt.Fprintf(w, "%s%s", cursor, progressBar)
+	// Show loading indicator during loading, otherwise show normal status + name
+	if loadingDisplay != "" {
+		fmt.Fprintf(w, "%s%s", cursor, loadingDisplay)
 	} else {
 		fmt.Fprintf(w, "%s%s %s", cursor, glyph, name)
 	}

@@ -1,4 +1,4 @@
-// Package config handles acidBurn configuration loading and persistence.
+// Package config handles devdash configuration loading and persistence.
 package config
 
 import (
@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	configDir  = "acidburn"
+	configDir  = "devdash"
 	configFile = "config.yaml"
 )
 

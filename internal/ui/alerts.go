@@ -109,7 +109,7 @@ func (a *AlertsPanel) View() string {
 	content += footerStyle.Render(footerText)
 
 	// Fixed size modal box (80 cols x 28 rows)
-	modalStyle := a.styles.FocusedBorder.
+	modalStyle := a.styles.ModalBorder.
 		Width(80).
 		Height(28).
 		Padding(1, 2)

@@ -6,10 +6,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/infktd/acidburn/internal/config"
-	"github.com/infktd/acidburn/internal/registry"
-	"github.com/infktd/acidburn/internal/scanner"
-	"github.com/infktd/acidburn/internal/ui"
+	"github.com/infktd/devdash/internal/config"
+	"github.com/infktd/devdash/internal/registry"
+	"github.com/infktd/devdash/internal/scanner"
+	"github.com/infktd/devdash/internal/ui"
 )
 
 func main() {
@@ -42,8 +42,12 @@ func main() {
 		}
 	}
 
-	// Run TUI
-	p := tea.NewProgram(ui.New(cfg, reg), tea.WithAltScreen())
+	// Run TUI with mouse support
+	p := tea.NewProgram(
+		ui.New(cfg, reg),
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(), // Enable mouse motion tracking
+	)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

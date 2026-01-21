@@ -1,4 +1,4 @@
-# acidBurn QA Test Plan - v0.1.3 Reactive Features
+# devdash QA Test Plan - v0.1.3 Reactive Features
 
 ## Overview
 This test plan covers all reactive UI features added in the unreleased v0.1.3 version, plus regression testing for previous bug fixes.
@@ -14,11 +14,11 @@ This test plan covers all reactive UI features added in the unreleased v0.1.3 ve
 ### 1. Ensure Test Environment
 ```bash
 # Build latest version
-cd /Users/jayne/Desktop/codingProjects/acidBurn
-go build -o acidburn .
+cd /Users/jayne/Desktop/codingProjects/devdash
+go build -o devdash .
 
 # Verify multiple test projects exist
-./acidburn
+./devdash
 # You should see multiple projects in sidebar
 ```
 
@@ -35,7 +35,7 @@ go build -o acidburn .
 
 #### Test 1.1: Activity Indicator Appears
 **Steps:**
-1. Start acidBurn: `./acidburn`
+1. Start devdash: `./devdash`
 2. Start a project with active services (press `s` on a project)
 3. Wait for services to start logging
 4. Focus on Services pane (press Tab if needed)
@@ -77,7 +77,7 @@ go build -o acidburn .
 
 #### Test 2.1: Start Transition Flash
 **Steps:**
-1. Start acidBurn with idle project
+1. Start devdash with idle project
 2. Focus Services pane
 3. Press `s` to start a service (or start entire project)
 4. Watch STATUS column closely
@@ -89,7 +89,7 @@ go build -o acidburn .
 
 #### Test 2.2: Stop Transition Flash
 **Steps:**
-1. Start acidBurn with running services
+1. Start devdash with running services
 2. Focus Services pane
 3. Press `x` to stop a service
 4. Watch STATUS column closely
@@ -172,7 +172,7 @@ go build -o acidburn .
 
 #### Test 4.1: Start Operation Progress
 **Steps:**
-1. Start acidBurn with idle project
+1. Start devdash with idle project
 2. Focus Projects pane
 3. Press `s` to start project
 4. Watch sidebar where project name appears
@@ -190,7 +190,7 @@ go build -o acidburn .
 
 #### Test 4.2: Stop Operation Progress
 **Steps:**
-1. Start acidBurn with running project
+1. Start devdash with running project
 2. Focus Projects pane
 3. Press `x` to stop project
 4. Watch sidebar
@@ -235,7 +235,7 @@ go build -o acidburn .
 
 #### Test 5.1: Tab Navigation
 **Steps:**
-1. Start acidBurn
+1. Start devdash
 2. Note which pane is focused (has colored title)
 3. Press Tab
 4. Press Tab again
@@ -250,7 +250,7 @@ go build -o acidburn .
 
 #### Test 5.2: Shift+Tab Navigation
 **Steps:**
-1. Start acidBurn (starts on Projects pane)
+1. Start devdash (starts on Projects pane)
 2. Press Shift+Tab
 3. Press Shift+Tab again
 4. Press Shift+Tab third time
@@ -285,7 +285,7 @@ go build -o acidburn .
 **Bug:** Pressing up at top of projects list caused rendering glitch and color change.
 
 **Steps:**
-1. Start acidBurn
+1. Start devdash
 2. Ensure Projects pane is focused
 3. Press up arrow repeatedly (ensure cursor at top)
 4. Observe text rendering and colors
@@ -301,7 +301,7 @@ go build -o acidburn .
 
 #### Test 6.2: Footer Keybindings Alignment
 **Steps:**
-1. Start acidBurn
+1. Start devdash
 2. Observe footer at bottom of screen
 3. Focus each pane (Projects, Services, Logs)
 
@@ -321,7 +321,7 @@ go build -o acidburn .
 
 #### Test 7.1: Long Running Session
 **Steps:**
-1. Start acidBurn with multiple running projects
+1. Start devdash with multiple running projects
 2. Leave running for 15+ minutes
 3. Observe UI responsiveness
 
@@ -364,7 +364,7 @@ go build -o acidburn .
 
 #### Test 8.1: Test All Themes
 **Steps:**
-1. Start acidBurn
+1. Start devdash
 2. Press `S` for settings
 3. Navigate to Theme, press Enter
 4. Test each theme:
@@ -395,7 +395,7 @@ go build -o acidburn .
 
 #### Test 9.1: No Active Services
 **Steps:**
-1. Start acidBurn with all projects stopped
+1. Start devdash with all projects stopped
 2. Observe Services pane
 
 **Expected:**
@@ -452,7 +452,7 @@ _(List any non-blocking issues for future improvement)_
 - **Tester Name:** ________________
 - **Date:** ________________
 - **Environment:** ________________
-- **acidBurn Version:** ________________
+- **devdash Version:** ________________
 
 ---
 
@@ -478,4 +478,4 @@ For each issue found:
 4. Expected behavior
 5. Actual behavior
 6. Screenshots/terminal recordings if applicable
-7. Environment details (OS, terminal, acidBurn version)
+7. Environment details (OS, terminal, devdash version)

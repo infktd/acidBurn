@@ -5,7 +5,7 @@ import (
 )
 
 func TestGetThemeReturnsDefault(t *testing.T) {
-	theme := GetTheme("acid-green")
+	theme := GetTheme("matrix")
 	if theme.Primary == "" {
 		t.Fatal("Theme should have a primary color")
 	}

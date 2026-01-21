@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to acidBurn will be documented in this file.
+All notable changes to devdash will be documented in this file.
 
 This project uses [0ver](https://0ver.org/) versioning.
 
@@ -165,8 +165,8 @@ This project uses [0ver](https://0ver.org/) versioning.
 
 #### Core Features
 - Project discovery via filesystem scanning for `devenv.nix` files
-- Project registry with persistent storage at `~/.config/acidburn/registry.yaml`
-- Configuration system with YAML file at `~/.config/acidburn/config.yaml`
+- Project registry with persistent storage at `~/.config/devdash/registry.yaml`
+- Configuration system with YAML file at `~/.config/devdash/config.yaml`
 - Unix socket communication with process-compose daemons
 - Project state detection (Running, Degraded, Idle, Stale, Missing)
 
@@ -216,7 +216,7 @@ This project uses [0ver](https://0ver.org/) versioning.
 - Critical-only mode option
 
 #### Theming
-- Three built-in themes: acid-green, nord, dracula
+- Three built-in themes: matrix, nord, dracula
 - Consistent color palette across all UI elements
 - Configurable via settings panel
 
