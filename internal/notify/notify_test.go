@@ -42,3 +42,91 @@ func TestNotifierDisabled(t *testing.T) {
 
 // Note: We don't test actual beeep calls as they'd create real notifications
 // The important thing is the enabled/disabled gating works
+
+func TestNotifierServiceCrashed(t *testing.T) {
+	n := NewNotifier(true)
+
+	// When enabled, call should succeed (may fail if beeep not available in test env)
+	err := n.ServiceCrashed("test-project", "test-service", 1)
+	// Don't fail on beeep errors in test environment
+	_ = err
+
+	// When disabled, should not error
+	n.SetEnabled(false)
+	err = n.ServiceCrashed("test-project", "test-service", 1)
+	if err != nil {
+		t.Errorf("ServiceCrashed() should not error when disabled: %v", err)
+	}
+}
+
+func TestNotifierServiceRecovered(t *testing.T) {
+	n := NewNotifier(true)
+
+	err := n.ServiceRecovered("test-project", "test-service")
+	// Don't fail on beeep errors in test environment
+	_ = err
+
+	n.SetEnabled(false)
+	err = n.ServiceRecovered("test-project", "test-service")
+	if err != nil {
+		t.Errorf("ServiceRecovered() should not error when disabled: %v", err)
+	}
+}
+
+func TestNotifierProjectStarted(t *testing.T) {
+	n := NewNotifier(true)
+
+	err := n.ProjectStarted("test-project")
+	// Don't fail on beeep errors in test environment
+	_ = err
+
+	n.SetEnabled(false)
+	err = n.ProjectStarted("test-project")
+	if err != nil {
+		t.Errorf("ProjectStarted() should not error when disabled: %v", err)
+	}
+}
+
+func TestNotifierProjectStopped(t *testing.T) {
+	n := NewNotifier(true)
+
+	err := n.ProjectStopped("test-project")
+	// Don't fail on beeep errors in test environment
+	_ = err
+
+	n.SetEnabled(false)
+	err = n.ProjectStopped("test-project")
+	if err != nil {
+		t.Errorf("ProjectStopped() should not error when disabled: %v", err)
+	}
+}
+
+func TestNotifierCritical(t *testing.T) {
+	n := NewNotifier(true)
+
+	err := n.Critical("Critical error", "Something bad happened")
+	// Don't fail on beeep errors in test environment
+	_ = err
+
+	// When disabled
+	n.SetEnabled(false)
+	err = n.Critical("Title", "Body")
+	if err != nil {
+		t.Errorf("Critical() should not error when disabled: %v", err)
+	}
+}
+
+func TestNotifierInfo(t *testing.T) {
+	n := NewNotifier(true)
+
+	err := n.Info("Info message", "Details here")
+	// Don't fail on beeep errors in test environment
+	_ = err
+
+	// When disabled
+	n.SetEnabled(false)
+	err = n.Info("Title", "Body")
+	if err != nil {
+		t.Errorf("Info() should not error when disabled: %v", err)
+	}
+}
