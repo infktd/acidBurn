@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -671,5 +673,82 @@ func TestPackagesPaneIntegration(t *testing.T) {
 	view = m.View()
 	if !strings.Contains(view, "[p:services]") {
 		t.Error("narrow terminal showing packages should show services indicator")
+	}
+}
+
+func TestFormatBytes(t *testing.T) {
+	tests := []struct {
+		bytes int64
+		want  string
+	}{
+		{0, "0B"},
+		{1023, "1023B"},
+		{1024, "1K"},
+		{1024 * 1024, "1.0M"},
+		{1024 * 1024 * 1024, "1.0G"},
+		{1536, "2K"},
+		{1024 * 1024 * 2, "2.0M"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%d", tt.bytes), func(t *testing.T) {
+			got := formatBytes(tt.bytes)
+			if got != tt.want {
+				t.Errorf("formatBytes(%d) = %q, want %q", tt.bytes, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		duration time.Duration
+		want     string
+	}{
+		{0, "0s"},
+		{30 * time.Second, "30s"},
+		{60 * time.Second, "1m"},
+		{90 * time.Second, "1m"},
+		{time.Hour, "1h"},
+		{time.Hour + time.Minute, "1h1m"},
+		{24 * time.Hour, "1d"},
+		{25 * time.Hour, "1d1h"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			got := formatDuration(tt.duration)
+			if got != tt.want {
+				t.Errorf("formatDuration(%v) = %q, want %q", tt.duration, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatSystemTime(t *testing.T) {
+	tests := []struct {
+		sysTime string
+		want    string
+	}{
+		{"0s", "0s"},
+		{"30s", "30s"},
+		{"1m", "1m"},
+		{"1h", "1h"},
+		{"1h30m", "1h30m"},
+		{"24h", "1d"},
+		{"invalid", "invalid"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.sysTime, func(t *testing.T) {
+			got := formatSystemTime(tt.sysTime)
+			if got == "" {
+				t.Errorf("formatSystemTime(%q) returned empty string", tt.sysTime)
+			}
+			// For valid inputs, verify format is reasonable
+			if tt.sysTime != "invalid" && got != tt.want {
+				t.Errorf("formatSystemTime(%q) = %q, want %q", tt.sysTime, got, tt.want)
+			}
+		})
 	}
 }
