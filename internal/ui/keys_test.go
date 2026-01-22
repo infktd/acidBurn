@@ -46,3 +46,21 @@ func TestDefaultKeyMapSearchNavigation(t *testing.T) {
 		t.Errorf("PrevMatch should be 'N', got %q", km.PrevMatch.Keys()[0])
 	}
 }
+
+func TestKeyMapFullHelp(t *testing.T) {
+	km := DefaultKeyMap()
+
+	fullHelp := km.FullHelp()
+
+	if len(fullHelp) == 0 {
+		t.Error("FullHelp() should return non-empty help")
+	}
+
+	// Should contain key bindings
+	// Format is [][]key.Binding
+	for i, section := range fullHelp {
+		if len(section) == 0 {
+			t.Errorf("FullHelp() section %d is empty", i)
+		}
+	}
+}
