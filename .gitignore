@@ -5,3 +5,4 @@ devdash
 result
 coverage.out
 coverage.html
+.DS_Store

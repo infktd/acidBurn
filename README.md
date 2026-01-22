@@ -20,20 +20,6 @@
 
 **devdash** is a terminal UI for managing multiple [devenv.sh](https://devenv.sh) projects from one place. Instead of running `devenv up` in separate terminals and manually checking logs, devdash gives you a unified dashboard to monitor and control all your development environments.
 
-```
-┌─ Projects ────────────────┐┌─ Services (my-api) ─────────────────────────┐
-│ > my-api         [Running]││  postgres    Running  ↑ 2h 15m  CPU: 2%    │
-│   blog-site      [Idle]   ││  redis       Running  ↑ 2h 15m  CPU: 1%    │
-│   data-pipeline  [Stopped]││  api-server  Running  ↑ 2h 14m  CPU: 15%   │
-└───────────────────────────┘│  worker      Stopped  ↓ 5m ago             │
-                             └──────────────────────────────────────────────┘
-┌─ Logs (api-server) ──────────────────────────────────────────────────────┐
-│ 2026-01-21 21:30:45 INFO  Server starting on port 8080                   │
-│ 2026-01-21 21:30:46 INFO  Connected to database                          │
-│ 2026-01-21 21:31:02 DEBUG Handling request GET /api/users               │
-└──────────────────────────────────────────────────────────────────────────┘
-```
-
 ![devdash screenshot](img/devdash.png)
 
 ## Why?
