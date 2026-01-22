@@ -302,3 +302,26 @@ func TestRegistryToggleHidden(t *testing.T) {
 		t.Error("ToggleHidden should return false for nonexistent project")
 	}
 }
+
+func TestProjectStateString(t *testing.T) {
+	tests := []struct {
+		state ProjectState
+		want  string
+	}{
+		{StateIdle, "idle"},
+		{StateRunning, "running"},
+		{StateDegraded, "degraded"},
+		{StateStale, "stale"},
+		{StateMissing, "missing"},
+		{ProjectState(999), "unknown"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			got := tt.state.String()
+			if got != tt.want {
+				t.Errorf("ProjectState.String() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
