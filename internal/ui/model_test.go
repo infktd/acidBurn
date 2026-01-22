@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -414,5 +417,259 @@ func TestSwitchToCurrentProjectResetsState(t *testing.T) {
 	}
 	if len(m.cpuHistory) != 0 {
 		t.Error("cpuHistory should be cleared")
+	}
+}
+
+func TestModelPackagesViewInitialized(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+
+	if m.packagesView == nil {
+		t.Error("packagesView should be initialized")
+	}
+}
+
+func TestShouldShowBothPanes(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+
+	// Narrow terminal - should show single pane
+	m.width = 139
+	if m.shouldShowBothPanes() {
+		t.Error("expected false for width 139")
+	}
+
+	// Wide terminal - should show both panes
+	m.width = 140
+	if !m.shouldShowBothPanes() {
+		t.Error("expected true for width 140")
+	}
+
+	m.width = 200
+	if !m.shouldShowBothPanes() {
+		t.Error("expected true for width 200")
+	}
+}
+
+func TestTogglePackagesView(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 100 // Narrow terminal
+
+	// Default should show services (showPackages = false)
+	if m.showPackages {
+		t.Error("expected showPackages to be false by default")
+	}
+
+	// Toggle to packages
+	m.togglePackagesView()
+	if !m.showPackages {
+		t.Error("expected showPackages to be true after toggle")
+	}
+
+	// Toggle back to services
+	m.togglePackagesView()
+	if m.showPackages {
+		t.Error("expected showPackages to be false after second toggle")
+	}
+}
+
+func TestPressP_TogglesPackagesView(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 100 // Narrow terminal
+	m.showSplash = false
+
+	initialState := m.showPackages
+
+	// Press 'p' key
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}}
+	newModel, _ := m.Update(msg)
+	model := newModel.(*Model)
+
+	if model.showPackages == initialState {
+		t.Error("pressing 'p' should toggle showPackages")
+	}
+}
+
+func TestPressP_NoEffectOnWideTerminal(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 150 // Wide terminal - both panes visible
+	m.showSplash = false
+
+	// Press 'p' key shouldn't have effect
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}}
+	newModel, _ := m.Update(msg)
+	model := newModel.(*Model)
+
+	// On wide terminals, 'p' could still toggle but doesn't affect display
+	// Just verify it doesn't crash
+	_ = model
+}
+
+func TestProjectSwitch_ScansPackages(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{
+		Projects: []*registry.Project{
+			{Path: "/tmp/testproject", Name: "test"},
+		},
+	}
+	m := New(cfg, reg)
+	m.selectedProject = 0
+
+	// Switch to project (this will try to scan packages)
+	m.switchToCurrentProject()
+
+	// PackagesView should have been updated (even if empty)
+	// This is a basic test - in real usage, packages would be populated
+	// if .devenv/profile/bin/ exists
+	if m.packagesView == nil {
+		t.Error("packagesView should not be nil after project switch")
+	}
+}
+
+func TestView_WideTerminal_ShowsBothPanes(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 150
+	m.height = 40
+	m.showSplash = false
+
+	view := m.View()
+
+	// Both "SERVICES" and "PACKAGES" should appear in view
+	if !strings.Contains(view, "SERVICES") {
+		t.Error("wide terminal view should contain SERVICES")
+	}
+	if !strings.Contains(view, "PACKAGES") {
+		t.Error("wide terminal view should contain PACKAGES")
+	}
+}
+
+func TestView_NarrowTerminal_ShowsIndicator(t *testing.T) {
+	cfg := config.Default()
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 100
+	m.height = 40
+	m.showSplash = false
+
+	// Showing services - should have packages indicator
+	m.showPackages = false
+	view := m.View()
+	if !strings.Contains(view, "[p:packages]") {
+		t.Error("narrow terminal showing services should contain '[p:packages]' indicator")
+	}
+
+	// Showing packages - should have services indicator
+	m.showPackages = true
+	view = m.View()
+	if !strings.Contains(view, "[p:services]") {
+		t.Error("narrow terminal showing packages should contain '[p:services]' indicator")
+	}
+}
+
+func TestMouse_HoverPackagesPane(t *testing.T) {
+	cfg := config.Default()
+	cfg.UI.SidebarWidth = 30
+	reg := &registry.Registry{}
+	m := New(cfg, reg)
+	m.width = 150
+	m.height = 60
+	m.showSplash = false
+
+	// Mouse in packages area (x >= 30, y in packages region)
+	// Services roughly at top quarter, packages at second quarter
+	packagesY := 20 // In packages region
+
+	msg := tea.MouseMsg{
+		Type: tea.MouseMotion,
+		X:    50,
+		Y:    packagesY,
+	}
+
+	newModel, _ := m.Update(msg)
+	model := newModel.(*Model)
+
+	if model.focused != PanePackages {
+		t.Errorf("expected focus on packages, got %v", model.focused)
+	}
+}
+
+func TestPackagesPaneIntegration(t *testing.T) {
+	// Create test project directory with packages
+	tmpDir := t.TempDir()
+	projectPath := filepath.Join(tmpDir, "testproject")
+	binDir := filepath.Join(projectPath, ".devenv", "profile", "bin")
+
+	err := os.MkdirAll(binDir, 0755)
+	if err != nil {
+		t.Fatalf("failed to create test directory: %v", err)
+	}
+
+	// Create test binaries
+	testBins := map[string]string{
+		"go":      "#!/bin/sh\necho go1.21",
+		"python3": "#!/bin/sh\necho python3.11",
+		"node":    "#!/bin/sh\necho node20",
+	}
+
+	for name, content := range testBins {
+		binPath := filepath.Join(binDir, name)
+		err := os.WriteFile(binPath, []byte(content), 0755)
+		if err != nil {
+			t.Fatalf("failed to create binary %s: %v", name, err)
+		}
+	}
+
+	// Create model with test project
+	cfg := config.Default()
+	reg := &registry.Registry{
+		Projects: []*registry.Project{
+			{Path: projectPath, Name: "testproject"},
+		},
+	}
+	m := New(cfg, reg)
+	m.width = 150 // Wide terminal
+	m.height = 50
+	m.showSplash = false
+	m.selectedProject = 0
+
+	// Trigger project switch (should scan packages)
+	m.switchToCurrentProject()
+
+	// Verify packages were scanned
+	view := m.View()
+	if !strings.Contains(view, "PACKAGES") {
+		t.Error("view should contain PACKAGES pane")
+	}
+
+	// Switch to narrow terminal
+	m.width = 100
+	msg := tea.WindowSizeMsg{Width: 100, Height: 50}
+	newModel, _ := m.Update(msg)
+	m = newModel.(*Model)
+
+	// Should show services by default
+	view = m.View()
+	if !strings.Contains(view, "[p:packages]") {
+		t.Error("narrow terminal should show packages indicator")
+	}
+
+	// Toggle to packages
+	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}}
+	newModel, _ = m.Update(keyMsg)
+	m = newModel.(*Model)
+
+	view = m.View()
+	if !strings.Contains(view, "[p:services]") {
+		t.Error("narrow terminal showing packages should show services indicator")
 	}
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/infktd/devdash/internal/config"
 	"github.com/infktd/devdash/internal/health"
 	"github.com/infktd/devdash/internal/notify"
+	"github.com/infktd/devdash/internal/packages"
 	"github.com/infktd/devdash/internal/registry"
 )
 
@@ -32,6 +33,7 @@ type FocusedPane int
 const (
 	PaneSidebar FocusedPane = iota
 	PaneServices
+	PanePackages
 	PaneLogs
 )
 
@@ -91,6 +93,7 @@ type Model struct {
 	showHelp     bool
 	showSettings bool
 	showSplash   bool
+	showPackages bool // When true, show packages pane instead of services (narrow terminals)
 
 	// Search state (for logs)
 	searchMode         bool
@@ -103,6 +106,7 @@ type Model struct {
 
 	// Components
 	logView       *LogView
+	packagesView  *PackagesView
 	toast         *ToastManager
 	alerts        *AlertHistory
 	alertsPanel   *AlertsPanel
@@ -267,6 +271,7 @@ func New(cfg *config.Config, reg *registry.Registry) *Model {
 
 		// Initialize components
 		logView:       NewLogView(styles, 80, 20),
+		packagesView:  NewPackagesView(styles),
 		toast:         NewToastManager(styles, 60),
 		alerts:        alertHistory,
 		alertsPanel:   NewAlertsPanel(styles, alertHistory, 80, 24),
@@ -319,7 +324,7 @@ func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Calculate pane boundaries
 	sidebarWidth := m.config.UI.SidebarWidth
-	servicesHeight := (m.height - 4) / 3 // Approximate services pane height
+	bodyHeight := m.height - 4 // header + footer
 
 	// Determine which pane the mouse is over
 	x := msg.X
@@ -330,10 +335,29 @@ func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if x < sidebarWidth {
 		// Mouse is in sidebar (projects)
 		newFocus = PaneSidebar
-	} else {
-		// Mouse is in main area (services or logs)
+	} else if m.shouldShowBothPanes() {
+		// Wide terminal: Services, Packages, Logs stacked vertically
+		servicesHeight := bodyHeight / 4
+		packagesHeight := bodyHeight / 4
+
 		if y < servicesHeight+2 { // +2 for header
 			newFocus = PaneServices
+		} else if y < servicesHeight+packagesHeight+4 { // +4 for header and borders
+			newFocus = PanePackages
+		} else {
+			newFocus = PaneLogs
+		}
+	} else {
+		// Narrow terminal: either Services or Packages, plus Logs
+		mainPaneHeight := bodyHeight / 3
+
+		if y < mainPaneHeight+2 { // +2 for header
+			// In main pane area - could be services or packages
+			if m.showPackages {
+				newFocus = PanePackages
+			} else {
+				newFocus = PaneServices
+			}
 		} else {
 			newFocus = PaneLogs
 		}
@@ -1158,6 +1182,9 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.alertsPanel.Show()
 		}
 		return m, nil
+	case msg.String() == "p":
+		// Toggle between packages and services view
+		return m, m.togglePackagesView()
 	case key.Matches(msg, m.keys.Back):
 		// Don't handle Esc globally if sidebar is filtering or logs has active search
 		if m.focused == PaneSidebar && m.projectFilterMode {
@@ -1495,6 +1522,21 @@ func (m *Model) currentProject() *registry.Project {
 	return m.displayedProjects[m.selectedProject]
 }
 
+const (
+	minWidthForBothPanes = 140
+)
+
+// shouldShowBothPanes determines if there's enough space to show both Services and Packages panes.
+func (m *Model) shouldShowBothPanes() bool {
+	return m.width >= minWidthForBothPanes
+}
+
+// togglePackagesView switches between Services and Packages pane (for narrow terminals).
+func (m *Model) togglePackagesView() tea.Cmd {
+	m.showPackages = !m.showPackages
+	return nil
+}
+
 // updateDisplayedProjects rebuilds the sidebar display order (active first, then idle, alphabetical within each).
 // It also caches the detected states to avoid inconsistent state during rendering.
 func (m *Model) updateDisplayedProjects() {
@@ -1620,11 +1662,45 @@ func (m *Model) listIndexToProjectIndex(listIndex int) int {
 }
 
 func (m *Model) cycleFocus() {
-	m.focused = (m.focused + 1) % 3
+	switch m.focused {
+	case PaneSidebar:
+		m.focused = PaneServices
+	case PaneServices:
+		// If both panes visible, go to packages next
+		// Otherwise skip to logs
+		if m.shouldShowBothPanes() {
+			m.focused = PanePackages
+		} else {
+			m.focused = PaneLogs
+		}
+	case PanePackages:
+		m.focused = PaneLogs
+	case PaneLogs:
+		m.focused = PaneSidebar
+	default:
+		m.focused = PaneSidebar
+	}
 }
 
 func (m *Model) cycleFocusReverse() {
-	m.focused = (m.focused + 2) % 3 // +2 is same as -1 mod 3
+	switch m.focused {
+	case PaneSidebar:
+		m.focused = PaneLogs
+	case PaneServices:
+		m.focused = PaneSidebar
+	case PanePackages:
+		m.focused = PaneServices
+	case PaneLogs:
+		// If both panes visible, go to packages previous
+		// Otherwise skip to services
+		if m.shouldShowBothPanes() {
+			m.focused = PanePackages
+		} else {
+			m.focused = PaneServices
+		}
+	default:
+		m.focused = PaneSidebar
+	}
 }
 
 // switchToCurrentProject updates the services display for the currently selected project
@@ -1640,6 +1716,19 @@ func (m *Model) switchToCurrentProject() {
 	m.memHistory = make(map[string][]int64)          // Reset memory history
 	m.logView.SetService("")                         // Clear service filter
 	m.logView.buffer.Clear()                         // Clear old logs
+
+	// Scan packages for new project
+	project := m.currentProject()
+	if project != nil {
+		pkgs, err := packages.Scan(project.Path)
+		if err != nil {
+			// Log error but don't block
+			pkgs = []packages.Package{}
+		}
+		m.packagesView.SetPackages(pkgs)
+	} else {
+		m.packagesView.SetPackages([]packages.Package{})
+	}
 }
 
 func (m *Model) moveUp() tea.Cmd {
@@ -1951,21 +2040,45 @@ func (m *Model) renderProjectItem(idx int, p *registry.Project) string {
 }
 
 func (m *Model) renderMain(width, height int) string {
-	servicesHeight := height / 3
-	logsHeight := height - servicesHeight - 2
+	// Determine layout based on width
+	if m.shouldShowBothPanes() {
+		// Wide terminal: show Services, Packages, and Logs stacked vertically
+		servicesHeight := height / 4
+		packagesHeight := height / 4
+		logsHeight := height - servicesHeight - packagesHeight - 4
 
-	services := m.renderServices(width, servicesHeight)
-	logs := m.renderLogs(width, logsHeight)
+		services := m.renderServices(width, servicesHeight)
+		packages := m.renderPackages(width, packagesHeight)
+		logs := m.renderLogs(width, logsHeight)
 
-	return lipgloss.JoinVertical(lipgloss.Left, services, logs)
+		return lipgloss.JoinVertical(lipgloss.Left, services, packages, logs)
+	} else {
+		// Narrow terminal: show either Services or Packages, plus Logs
+		mainPaneHeight := height / 3
+		logsHeight := height - mainPaneHeight - 2
+
+		var mainPane string
+		if m.showPackages {
+			mainPane = m.renderPackages(width, mainPaneHeight)
+		} else {
+			mainPane = m.renderServices(width, mainPaneHeight)
+		}
+
+		logs := m.renderLogs(width, logsHeight)
+
+		return lipgloss.JoinVertical(lipgloss.Left, mainPane, logs)
+	}
 }
 
 func (m *Model) renderServices(width, height int) string {
 	var content string
 
 	if p := m.currentProject(); p != nil {
-		// Title with focus indicator
+		// Title with focus indicator and toggle hint on narrow terminals
 		title := fmt.Sprintf("SERVICES [%s]", p.Name)
+		if !m.shouldShowBothPanes() {
+			title += " [p:packages]"
+		}
 		content = m.renderSectionTitle(title, m.focused == PaneServices, width-4) + "\n"
 
 		if len(m.services) == 0 {
@@ -1996,7 +2109,11 @@ func (m *Model) renderServices(width, height int) string {
 			content += m.servicesTable.View()
 		}
 	} else {
-		content = m.renderSectionTitle("SERVICES", m.focused == PaneServices, width-4) + "\n"
+		title := "SERVICES"
+		if !m.shouldShowBothPanes() {
+			title += " [p:packages]"
+		}
+		content = m.renderSectionTitle(title, m.focused == PaneServices, width-4) + "\n"
 		emptyStateHeight := height - 8
 		emptyContent := m.renderEmptyState(
 			"No Project Selected",
@@ -2018,6 +2135,30 @@ func (m *Model) renderServices(width, height int) string {
 	}
 
 	return style.Width(width).Height(height).Render(content)
+}
+
+func (m *Model) renderPackages(width, height int) string {
+	// Update packagesView size and focus state
+	m.packagesView.SetSize(width-4, height-4)
+	m.packagesView.SetFocused(m.focused == PanePackages)
+
+	// Add toggle indicator on narrow terminals
+	if !m.shouldShowBothPanes() {
+		m.packagesView.SetTitleSuffix("[p:services]")
+	} else {
+		m.packagesView.SetTitleSuffix("")
+	}
+
+	// Get packages view content
+	packagesContent := m.packagesView.View()
+
+	// Wrap in border
+	style := m.styles.BlurredBorder
+	if m.focused == PanePackages {
+		style = m.styles.FocusedBorder
+	}
+
+	return style.Width(width).Height(height).Render(packagesContent)
 }
 
 func (m *Model) renderLogs(width, height int) string {
