@@ -34,6 +34,8 @@
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
+![devdash screenshot](img/devdash.png)
+
 ## Why?
 
 When working with multiple devenv projects, you end up with:

@@ -152,7 +152,7 @@ func (sp *SettingsPanel) buildFields() {
 			Label: "Theme",
 			Type:  FieldSelect,
 			Options: []SelectOption{
-				{Label: "Acid Green", Value: "matrix"},
+				{Label: "Matrix", Value: "matrix"},
 				{Label: "Gruvbox", Value: "gruvbox"},
 				{Label: "Dracula", Value: "dracula"},
 				{Label: "Nord", Value: "nord"},

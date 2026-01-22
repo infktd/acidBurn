@@ -3,3 +3,5 @@ devenv.lock
 devdash
 .worktrees/
 result
+coverage.out
+coverage.html
