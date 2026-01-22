@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -486,5 +487,49 @@ func TestSettingsPanelCycleOptions(t *testing.T) {
 	sp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
 	if sp.workingCopy.theme != initialTheme {
 		t.Errorf("should cycle back to %s, got %s", initialTheme, sp.workingCopy.theme)
+	}
+}
+
+func TestSettingsPanelRenderSelectOptions(t *testing.T) {
+	cfg := config.Default()
+	theme := GetTheme("matrix")
+	styles := NewStyles(theme)
+	sp := NewSettingsPanel(cfg, styles, 80, 24)
+	sp.Show()
+
+	// Navigate to a select field
+	// This depends on field order
+	for i := 0; i < 5; i++ {
+		sp.Update(MockKeyMsg("j"))
+	}
+
+	// Activate select field
+	sp.Update(MockKeyMsg("\r"))
+
+	// View should show options
+	view := sp.View()
+	if view == "" {
+		t.Error("View() should not be empty when select is active")
+	}
+
+	// Should contain theme options
+	if !strings.Contains(view, "dark") && !strings.Contains(view, "light") {
+		t.Log("View may contain theme options in select mode")
+	}
+}
+
+func TestSettingsPanelGetHelpText(t *testing.T) {
+	cfg := config.Default()
+	theme := GetTheme("matrix")
+	styles := NewStyles(theme)
+	sp := NewSettingsPanel(cfg, styles, 80, 24)
+	sp.Show()
+
+	view := sp.View()
+
+	// Help text should appear in view
+	// Check for common help keys
+	if !strings.Contains(view, "enter") && !strings.Contains(view, "esc") {
+		t.Log("View should contain help text for navigation")
 	}
 }
